@@ -332,7 +332,15 @@ document.write(`
             <nav aria-label="Page">
                 <ul class="visible nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#example-usage">Example usage</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#usage">Usage</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#usage">Usage</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#unipy">unipy</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#unipy-price">price</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#unipy-token">token</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#unipy-tokendb">tokendb</a></li>
+</ul>
+</li>
+</ul>
+</li>
 </ul>
             </nav>
         </div>
@@ -377,6 +385,89 @@ $<span class="w"> </span>unipy<span class="w"> </span>tokendb<span class="w"> </
 </section>
 <section id="usage">
 <h2>Usage<a class="headerlink" href="#usage" title="Permalink to this heading">#</a></h2>
+<section id="unipy">
+<h3>unipy<a class="headerlink" href="#unipy" title="Permalink to this heading">#</a></h3>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>unipy<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>COMMAND<span class="w"> </span><span class="o">[</span>ARGS<span class="o">]</span>...
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-unipy-v">
+<span id="cmdoption-unipy-verbose"></span><span class="sig-name descname"><span class="pre">-v</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--verbose</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-unipy-v" title="Permalink to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-unipy-version">
+<span class="sig-name descname"><span class="pre">--version</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;version&gt;</span></span><a class="headerlink" href="#cmdoption-unipy-version" title="Permalink to this definition">#</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Options<span class="colon">:</span></dt>
+<dd class="field-odd"><p>1 | 2 | 3</p>
+</dd>
+</dl>
+</dd></dl>
+
+<section id="unipy-price">
+<h4>price<a class="headerlink" href="#unipy-price" title="Permalink to this heading">#</a></h4>
+<p>Returns the price of <code class="docutils literal notranslate"><span class="pre">quantity</span></code> tokens of <code class="docutils literal notranslate"><span class="pre">token_in</span></code> quoted in <code class="docutils literal notranslate"><span class="pre">token_out</span></code>.</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>unipy<span class="w"> </span>price<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>TOKEN_IN<span class="w"> </span>TOKEN_OUT
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-unipy-price-raw">
+<span class="sig-name descname"><span class="pre">--raw</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-unipy-price-raw" title="Permalink to this definition">#</a></dt>
+<dd><p>Don’t normalize the quoted price to the output token’s decimals</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-unipy-price-quantity">
+<span class="sig-name descname"><span class="pre">--quantity</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;quantity&gt;</span></span><a class="headerlink" href="#cmdoption-unipy-price-quantity" title="Permalink to this definition">#</a></dt>
+<dd><p>Quantity of output tokens to get price of. Falls back to one full unit of the input token by default (10**18 for WETH, for example).</p>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-unipy-price-arg-TOKEN_IN">
+<span id="cmdoption-unipy-price-arg-token-in"></span><span class="sig-name descname"><span class="pre">TOKEN_IN</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-unipy-price-arg-TOKEN_IN" title="Permalink to this definition">#</a></dt>
+<dd><p>Required argument</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-unipy-price-arg-TOKEN_OUT">
+<span id="cmdoption-unipy-price-arg-token-out"></span><span class="sig-name descname"><span class="pre">TOKEN_OUT</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-unipy-price-arg-TOKEN_OUT" title="Permalink to this definition">#</a></dt>
+<dd><p>Required argument</p>
+</dd></dl>
+
+</section>
+<section id="unipy-token">
+<h4>token<a class="headerlink" href="#unipy-token" title="Permalink to this heading">#</a></h4>
+<p>Show metadata for token</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>unipy<span class="w"> </span>token<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>TOKEN
+</pre></div>
+</div>
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-unipy-token-arg-TOKEN">
+<span id="cmdoption-unipy-token-arg-token"></span><span class="sig-name descname"><span class="pre">TOKEN</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-unipy-token-arg-TOKEN" title="Permalink to this definition">#</a></dt>
+<dd><p>Required argument</p>
+</dd></dl>
+
+</section>
+<section id="unipy-tokendb">
+<h4>tokendb<a class="headerlink" href="#unipy-tokendb" title="Permalink to this heading">#</a></h4>
+<p>List known token addresses</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>unipy<span class="w"> </span>tokendb<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-unipy-tokendb-metadata">
+<span class="sig-name descname"><span class="pre">--metadata</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-unipy-tokendb-metadata" title="Permalink to this definition">#</a></dt>
+<dd><p>Also get metadata for tokens</p>
+</dd></dl>
+
+</section>
+</section>
 </section>
 </section>
 
@@ -423,7 +514,15 @@ $<span class="w"> </span>unipy<span class="w"> </span>tokendb<span class="w"> </
   <nav class="bd-toc-nav page-toc">
     <ul class="visible nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#example-usage">Example usage</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#usage">Usage</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#usage">Usage</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#unipy">unipy</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#unipy-price">price</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#unipy-token">token</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#unipy-tokendb">tokendb</a></li>
+</ul>
+</li>
+</ul>
+</li>
 </ul>
   </nav></div>
 
