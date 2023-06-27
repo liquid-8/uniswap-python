@@ -81,4 +81,3 @@ ENV/
 
 # mkdocs documentation
 /site
-/.vs/ProjectSettings.json
