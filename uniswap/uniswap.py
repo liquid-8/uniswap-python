@@ -373,7 +373,10 @@ class Uniswap:
         return price
 
     def _get_token_eth_output_price(
-        self, token: AddressLike, qty: Wei, fee: Optional[int] = None  # input token
+        self,
+        token: AddressLike,
+        qty: Wei,
+        fee: Optional[int] = None,  # input token
     ) -> int:
         """Public price (i.e. amount of input token needed) for token to ETH trades with an exact output."""
         fee = validate_fee_tier(fee=fee, version=self.version)
@@ -551,9 +554,7 @@ class Uniswap:
                 (1 - slippage) * self._get_eth_token_input_price(output_token, qty, fee)
             )
             if fee_on_transfer:
-                func = (
-                    self.router.functions.swapExactETHForTokensSupportingFeeOnTransferTokens
-                )
+                func = self.router.functions.swapExactETHForTokensSupportingFeeOnTransferTokens
             else:
                 func = self.router.functions.swapExactETHForTokens
             return self._build_and_send_tx(
@@ -630,9 +631,7 @@ class Uniswap:
                 (1 - slippage) * self._get_token_eth_input_price(input_token, qty, fee)
             )
             if fee_on_transfer:
-                func = (
-                    self.router.functions.swapExactTokensForETHSupportingFeeOnTransferTokens
-                )
+                func = self.router.functions.swapExactTokensForETHSupportingFeeOnTransferTokens
             else:
                 func = self.router.functions.swapExactTokensForETH
             return self._build_and_send_tx(
@@ -737,16 +736,20 @@ class Uniswap:
                 )
             )
             if fee_on_transfer:
-                func = (
-                    self.router.functions.swapExactTokensForTokensSupportingFeeOnTransferTokens
-                )
+                func = self.router.functions.swapExactTokensForTokensSupportingFeeOnTransferTokens
             else:
                 func = self.router.functions.swapExactTokensForTokens
+            weth_address = self.get_weth_address()
+            if is_same_address(input_token, weth_address) or is_same_address(output_token, weth_address):
+                path = [input_token, output_token]
+            else:
+                path = [input_token, weth_address, output_token]
+
             return self._build_and_send_tx(
                 func(
                     qty,
                     min_tokens_bought,
-                    [input_token, self.get_weth_address(), output_token],
+                    path,
                     recipient,
                     self._deadline(),
                 ),
@@ -1004,11 +1007,17 @@ class Uniswap:
                 input_token, output_token, qty, fee=fee
             )
             amount_in_max = int((1 + slippage) * cost)
+            weth = self.get_weth_address()
+            path = (
+                [input_token, output_token]
+                if is_same_address(input_token, weth) or is_same_address(output_token, weth)
+                else [input_token, weth, output_token]
+            )
             return self._build_and_send_tx(
                 self.router.functions.swapTokensForExactTokens(
                     qty,
                     amount_in_max,
-                    [input_token, self.get_weth_address(), output_token],
+                    path,
                     recipient,
                     self._deadline(),
                 ),
@@ -1436,19 +1445,22 @@ class Uniswap:
         """Build and send a transaction."""
         if not tx_params:
             tx_params = self._get_tx_params()
+
+        # Pre-populate gas BEFORE build_transaction to prevent web3 from calling
+        # eth_estimateGas internally. web3 calls eth_estimateGas during
+        # build_transaction when no gas is provided, which fails for contracts
+        # with computed jumps (e.g. Vyper v1 exchange contracts) under Anvil's
+        # strict EVM. use_estimate_gas=True for networks like Arbitrum where 500k
+        # is not a safe default.
+        if "gas" not in tx_params and not self.use_estimate_gas:
+            tx_params["gas"] = Wei(500_000)
+
         transaction = function.build_transaction(tx_params)
 
         if "gas" not in tx_params:
-            # `use_estimate_gas` needs to be True for networks like Arbitrum (can't assume 250000 gas),
-            # but it breaks tests for unknown reasons because estimate_gas takes forever on some tx's.
-            # Maybe an issue with ganache? (got GC warnings once...)
-            if self.use_estimate_gas:
-                # The Uniswap V3 UI uses 20% margin for transactions
-                transaction["gas"] = Wei(
-                    int(self.w3.eth.estimate_gas(transaction) * 1.2)
-                )
-            else:
-                transaction["gas"] = Wei(250_000)
+            # use_estimate_gas=True: run explicit estimate with 20% margin
+            # The Uniswap V3 UI uses 20% margin for transactions
+            transaction["gas"] = Wei(int(self.w3.eth.estimate_gas(transaction) * 1.2))
 
         signed_txn = self.w3.eth.account.sign_transaction(
             transaction, private_key=self.private_key
