@@ -20,8 +20,6 @@ The unofficial Python client for [Uniswap](https://uniswap.io/).
 
 Documentation is available at https://uniswap-python.com/
 
-**Want to help implement support for Uniswap v4?** See [issue #337](https://github.com/uniswap-python/uniswap-python/issues/337)
-
 ## Functionality
 
 *  A simple to use Python wrapper for all available contract functions and variables
@@ -30,6 +28,9 @@ Documentation is available at https://uniswap-python.com/
 
 ### Supports
 
+ - Uniswap v4 (as of v0.8.0, beta)
+    - Swaps, price quoting, liquidity management
+    - Pool discovery via pool cache service
  - Uniswap v3 (as of v0.5.0)
     - Including beta support for Arbitrum & Optimism deployments (as of v0.5.4)
  - Uniswap v2 (as of v0.4.0)
@@ -47,7 +48,13 @@ See our [Getting started guide](https://uniswap-python.com/getting-started.html)
 
 Unit tests are under development using the pytest framework. Contributions are welcome!
 
-Test are run on a fork of the main net using ganache-cli. You need to install it with `npm install -g ganache-cli` before running tests.
+Tests run on a fork of mainnet using [Anvil](https://getfoundry.sh) (part of Foundry). Install Foundry with:
+
+```sh
+curl -L https://foundry.paradigm.xyz | bash
+export PATH="$PATH:$HOME/.foundry/bin"
+foundryup
+```
 
 To run the full test suite, in the project directory set the `PROVIDER` env variable to a mainnet provider, and run:
 
@@ -79,6 +86,12 @@ Contributors also earn this beautiful [GitPOAP](https://gitpoap.notion.site/What
 </a>
 
 ## Changelog
+
+_0.8.0_
+
+* Added: Uniswap V4 support
+* Added: Pool cache service for Uniswap V4
+* Full parameters customization for V4 transactions; V4 transaction replacement and cancelling.
 
 _0.7.2_
 
@@ -155,7 +168,7 @@ _A huge thank you [Erik Bjäreholt](https://github.com/ErikBjare) for adding Uni
 * Switched from setup.py to pyproject.toml/poetry
 * Switched from Travis to GitHub Actions
 * For CI to work in your repo, you need to set the secret MAINNET_PROVIDER. I use Infura.
-* Running tests on a local fork of mainnet using ganache-cli (started as a fixture)
+* Running tests on a local fork of mainnet using Anvil/Foundry (started as a fixture)
 * Fixed tests for make_trade and make_trade_output
 * Added type annotations to the entire codebase and check them with mypy in CI
 * Formatted entire codebase with black
