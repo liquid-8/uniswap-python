@@ -10,6 +10,7 @@ wheels/
 .installed.cfg
 *.egg
 .idea/
+.vscode/
 __pycache__/
 
 # PyInstaller
