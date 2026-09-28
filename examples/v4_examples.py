@@ -90,9 +90,9 @@ def quoter_tests():
         test_pool2_tick_spacing,
         default_test_hooks,
     )
-    test_path_1hop = list()
+    test_path_1hop: list = []
     test_path_1hop.append(test_pool_key1)
-    test_path_2hop = list()
+    test_path_2hop: list = []
     test_path_2hop.append(test_pool_key1)
     test_path_2hop.append(test_pool_key2)
 
@@ -592,9 +592,9 @@ def swap_tests():
         test_pool2_tick_spacing,
         default_test_hooks,
     )
-    test_path_1hop = list()
+    test_path_1hop: list = []
     test_path_1hop.append(test_pool_key1)
-    test_path_2hop = list()
+    test_path_2hop: list = []
     test_path_2hop.append(test_pool_key1)
     test_path_2hop.append(test_pool_key2)
 

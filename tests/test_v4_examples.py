@@ -15,9 +15,9 @@ See docs/v4.rst for the prose version of these examples.
 import os
 import shutil
 import subprocess
+from collections.abc import Generator
 from dataclasses import dataclass
 from time import sleep
-from typing import Generator
 
 import pytest
 from web3 import Web3
@@ -84,9 +84,9 @@ class AnvilInstance:
 def anvil() -> Generator[AnvilInstance, None, None]:
     """Start an Anvil instance forked from mainnet."""
     if not shutil.which("anvil"):
-        raise Exception("anvil was not found in PATH")
+        raise ValueError("anvil was not found in PATH")
     if "PROVIDER" not in os.environ:
-        raise Exception(
+        raise ValueError(
             "PROVIDER must be set to a mainnet RPC URL so Anvil can fork mainnet."
         )
 

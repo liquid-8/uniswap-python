@@ -1,30 +1,20 @@
-import functools
 import json
 import math
 import os
+from collections.abc import Generator, Sequence
 from time import sleep
 from typing import (
     Any,
-    Generator,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
-    Union,
 )
 from xml.etree import ElementTree as ET
 
-import lru
 from web3 import Web3
 from web3.contract import Contract
 from web3.exceptions import NameNotFound
-from web3.middleware.cache import construct_simple_cache_middleware
-from web3.types import Middleware
 
 from .constants import (
     MAX_TICK,
     MIN_TICK,
-    SIMPLE_CACHE_RPC_WHITELIST,
     _netid_to_name,
     _poolmanager_contract_addresses_v4,
     _tick_spacing,
@@ -32,14 +22,7 @@ from .constants import (
 from .types import Address, AddressLike, PoolKey
 
 
-def _get_eth_simple_cache_middleware() -> Middleware:
-    return construct_simple_cache_middleware(
-        cache=functools.partial(lru.LRU, 256),  # type: ignore
-        rpc_whitelist=SIMPLE_CACHE_RPC_WHITELIST,
-    )
-
-
-def _str_to_addr(s: Union[AddressLike, str]) -> Address:
+def _str_to_addr(s: AddressLike | str) -> Address:
     """Idempotent"""
     if isinstance(s, str):
         if s.startswith("0x"):
@@ -62,7 +45,7 @@ def _addr_to_str(a: AddressLike) -> str:
     raise NameNotFound(a)
 
 
-def is_same_address(a1: Union[AddressLike, str], a2: Union[AddressLike, str]) -> bool:
+def is_same_address(a1: AddressLike | str, a2: AddressLike | str) -> bool:
     return bool(_str_to_addr(a1) == _str_to_addr(a2))
 
 
@@ -77,7 +60,6 @@ def _load_abi(name: str) -> str:
     return abi
 
 
-@functools.lru_cache()
 def _load_contract(w3: Web3, abi_name: str, address: AddressLike) -> Contract:
     address = Web3.to_checksum_address(address)
     return w3.eth.contract(address=address, abi=_load_abi(abi_name))
@@ -87,7 +69,7 @@ def _load_contract_erc20(w3: Web3, address: AddressLike) -> Contract:
     return _load_contract(w3, "erc20", address)
 
 
-def _encode_path(token_in: AddressLike, route: List[Tuple[int, AddressLike]]) -> bytes:
+def _encode_path(token_in: AddressLike, route: list[tuple[int, AddressLike]]) -> bytes:
     """
     Needed for multi-hop swaps in V3.
 
@@ -222,7 +204,7 @@ def get_max_tick(fee: int) -> int:
     return (MAX_TICK // max_tick_spacing) * max_tick_spacing
 
 
-def default_tick_range(fee: int) -> Tuple[int, int]:
+def default_tick_range(fee: int) -> tuple[int, int]:
     min_tick = get_min_tick(fee)
     max_tick = get_max_tick(fee)
 
@@ -270,14 +252,14 @@ def realised_fee_percentage(fee: int, amount_in: int) -> float:
 class V4pools:
     """Uniswap V4 pools handler"""
 
-    poolkeys_list: List[PoolKey]
+    poolkeys_list: list[PoolKey]
 
     def __init__(
         self,
         web3: Web3,
     ):
         """:param web3: Web3 instance connected to the network for which pool data is being fetched."""
-        self.poolkeys_list: List[PoolKey] = list()
+        self.poolkeys_list: list[PoolKey] = []
         self.web3 = web3
         self.last_block = 0
 
@@ -298,7 +280,7 @@ class V4pools:
         clear_list: bool = True,
         retry_attempts: int = 3,
         minutes_between_retries: int = 3,
-        last_block: Optional[int] = None,
+        last_block: int | None = None,
     ) -> int:
         """
         :param first_block: Starting block for scanning process
@@ -340,7 +322,7 @@ class V4pools:
         if clear_list:
             self.poolkeys_list.clear()
         retry_attempts_done: int = 0
-        for i in range(0, chunks_amount + 1):
+        for i in range(chunks_amount + 1):
             if start_block + chunk_size <= last_block_number:
                 end_block = start_block + chunk_size
             else:
@@ -351,16 +333,16 @@ class V4pools:
                 flush=True,
             )
             try:
-                logs = pool_manager_contract.events.Initialize().get_logs(  # type: ignore [attr-defined]
-                    fromBlock=start_block, toBlock=end_block
+                logs = pool_manager_contract.events.Initialize().get_logs(
+                    from_block=start_block, to_block=end_block
                 )
             except Exception as e:
                 # Exception occurs when chunk size value is too big so RPC endpoint rejects
                 # requests OR RPC endpoint has issues.
                 # In such cases, we will try to resume log retrieval process for a defined number of attempts. If all attempts fail, the method will be aborted and `-1`` value will be returned.
                 while retry_attempts_done < retry_attempts:
-                    print("")
-                    print("")
+                    print()
+                    print()
                     print(
                         f"Error retrieving logs. Retrying. ({retry_attempts_done + 1}/{retry_attempts})"
                     )
@@ -370,8 +352,8 @@ class V4pools:
                     sleep(int(minutes_between_retries) * 60)
                     retry_attempts_done += 1
                     try:
-                        logs = pool_manager_contract.events.Initialize().get_logs(  # type: ignore [attr-defined]
-                            fromBlock=start_block, toBlock=end_block
+                        logs = pool_manager_contract.events.Initialize().get_logs(
+                            from_block=start_block, to_block=end_block
                         )
                         print("Issue addressed. Resuming log retrieval.")
                         retry_attempts_done = 0
@@ -438,7 +420,6 @@ class V4pools:
             hooks.text = str(pool_item.hooks)
 
         ET.ElementTree(pool_data).write(poolkey_data_filename)
-        return
 
     def load_poolkeys_list(self, poolkey_data_filename: str) -> None:
         """Loads poolKey list from specified file (XML format)"""
@@ -470,7 +451,7 @@ class V4pools:
         else:
             raise ValueError("Couldn't locate file " + poolkey_data_filename)
 
-    def get_poolkeys_sublist(self, currency0: str, currency1: str) -> List[PoolKey]:
+    def get_poolkeys_sublist(self, currency0: str, currency1: str) -> list[PoolKey]:
         """Returns all pools for the (currency0, currency1) pair"""
         if currency0.lower() < currency1.lower():
             c0, c1 = currency0.lower(), currency1.lower()

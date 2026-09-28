@@ -2,10 +2,10 @@ import logging
 import os
 import shutil
 import subprocess
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import astuple, dataclass
 from time import sleep
-from typing import Generator, List, Optional
 
 import pytest
 from web3 import Web3
@@ -98,9 +98,9 @@ def web3(anvil: AnvilInstance) -> Web3:
 def anvil() -> Generator[AnvilInstance, None, None]:
     """Fixture that runs anvil which has forked off mainnet"""
     if not shutil.which("anvil"):
-        raise Exception("anvil was not found in PATH")
+        raise ValueError("anvil was not found in PATH")
     if "PROVIDER" not in os.environ:
-        raise Exception(
+        raise ValueError(
             "PROVIDER was not set, you need to set it to a mainnet provider (such as Infura) so that we can fork off our testnet"
         )
 
@@ -130,7 +130,7 @@ def does_not_raise():
 
 
 @pytest.mark.usefixtures("client", "web3")
-class TestUniswap4(object):
+class TestUniswap4:
     test_token_id: int = 0
     test_mint_tx_hash: str = ""
     test_tick: int = 0
@@ -147,7 +147,7 @@ class TestUniswap4(object):
         self,
         client: Uniswap4,
         token: str,
-        max_approval: Optional[int],
+        max_approval: int | None,
         delay_interval: int,
     ):
         # Approve the token
@@ -181,7 +181,7 @@ class TestUniswap4(object):
         address_to: str,
         gas_price: float,
         priority_fee: int,
-        custom_nonce: Optional[int],
+        custom_nonce: int | None,
     ):
         if not client.w3.is_address(address_to):
             address: AddressLike = client.address
@@ -189,7 +189,7 @@ class TestUniswap4(object):
             address = _str_to_addr(address_to)
         client.update_last_nonce()
         if custom_nonce == 0:
-            nonce: Optional[Nonce] = client.last_nonce
+            nonce: Nonce | None = client.last_nonce
         else:
             nonce = None
 
@@ -286,7 +286,7 @@ class TestUniswap4(object):
         client: Uniswap4,
         token0: str,
         qty: int,
-        route: List[PoolKey],
+        route: list[PoolKey],
     ):
         result = client.get_quote_exact_input(token0, qty, route)
         assert result
@@ -342,11 +342,11 @@ class TestUniswap4(object):
         token0: str,
         token1: str,
         qty: int,
-        fee: Optional[int],
-        tick_spacing: Optional[int],
-        hooks: Optional[str],
-        hook_data: Optional[bytes],
-        route: Optional[List[PoolKey]],
+        fee: int | None,
+        tick_spacing: int | None,
+        hooks: str | None,
+        hook_data: bytes | None,
+        route: list[PoolKey] | None,
     ):
         result = client.get_price_input(
             token0, token1, qty, fee, tick_spacing, hooks, hook_data, route
@@ -426,7 +426,7 @@ class TestUniswap4(object):
         ],
     )
     def test_get_quote_exact_output(
-        self, client: Uniswap4, token0: str, qty: int, route: List[PoolKey]
+        self, client: Uniswap4, token0: str, qty: int, route: list[PoolKey]
     ):
         result = client.get_quote_exact_output(token0, qty, route)
         assert result
@@ -488,11 +488,11 @@ class TestUniswap4(object):
         token0: str,
         token1: str,
         qty: int,
-        fee: Optional[int],
-        tick_spacing: Optional[int],
-        hooks: Optional[str],
-        hook_data: Optional[bytes],
-        route: Optional[List[PoolKey]],
+        fee: int | None,
+        tick_spacing: int | None,
+        hooks: str | None,
+        hook_data: bytes | None,
+        route: list[PoolKey] | None,
     ):
         result = client.get_price_output(
             token0, token1, qty, fee, tick_spacing, hooks, hook_data, route
@@ -565,7 +565,7 @@ class TestUniswap4(object):
         tick_spacing: int,
         hooks: str,
         hook_data: bytes,
-        custom_nonce: Optional[Nonce],
+        custom_nonce: Nonce | None,
     ):
         qtycap = client.get_quote_exact_input_single(
             token0, token1, qty, fee, tick_spacing, hooks, hook_data
@@ -634,8 +634,8 @@ class TestUniswap4(object):
         client: Uniswap4,
         token0: str,
         qty: int,
-        route: List[PoolKey],
-        custom_nonce: Optional[Nonce],
+        route: list[PoolKey],
+        custom_nonce: Nonce | None,
     ):
         qtycap = client.get_quote_exact_input(token0, qty, route)
 
@@ -698,10 +698,10 @@ class TestUniswap4(object):
         token0: str,
         token1: str,
         qty: int,
-        pool_key: Optional[PoolKey],
-        hook_data: Optional[bytes],
-        route: Optional[List[PoolKey]],
-        custom_nonce: Optional[Nonce],
+        pool_key: PoolKey | None,
+        hook_data: bytes | None,
+        route: list[PoolKey] | None,
+        custom_nonce: Nonce | None,
     ):
         qtycap = client.get_price_input(
             token0,
@@ -761,7 +761,7 @@ class TestUniswap4(object):
         tick_spacing: int,
         hooks: str,
         hook_data: bytes,
-        custom_nonce: Optional[Nonce],
+        custom_nonce: Nonce | None,
     ):
         qtycap = client.get_quote_exact_output_single(
             token0, token1, qty, fee, tick_spacing, hooks, hook_data
@@ -831,8 +831,8 @@ class TestUniswap4(object):
         client: Uniswap4,
         token0: str,
         qty: int,
-        route: List[PoolKey],
-        custom_nonce: Optional[Nonce],
+        route: list[PoolKey],
+        custom_nonce: Nonce | None,
     ):
         qtycap = client.get_quote_exact_output(token0, qty, route)
         tx = client.token_to_token_swap_output(
@@ -900,10 +900,10 @@ class TestUniswap4(object):
         token0: str,
         token1: str,
         qty: int,
-        pool_key: Optional[PoolKey],
-        hook_data: Optional[bytes],
-        route: Optional[List[PoolKey]],
-        custom_nonce: Optional[Nonce],
+        pool_key: PoolKey | None,
+        hook_data: bytes | None,
+        route: list[PoolKey] | None,
+        custom_nonce: Nonce | None,
     ):
         qtycap = client.get_price_output(
             token0,
@@ -939,7 +939,7 @@ class TestUniswap4(object):
         self,
         client: Uniswap4,
         pool_key: PoolKey,
-        custom_nonce: Optional[Nonce],
+        custom_nonce: Nonce | None,
     ):
         sqrt_price_x96 = 1 << 96  # 1:1 price
         test_pool_key = PoolKey(
@@ -984,7 +984,7 @@ class TestUniswap4(object):
         amount0: int,
         amount1: int,
         hook_data: bytes,
-        custom_nonce: Optional[Nonce],
+        custom_nonce: Nonce | None,
     ):
         recipient = _addr_to_str(client.address)
         tx = client.mint_position(
@@ -1078,7 +1078,7 @@ class TestUniswap4(object):
         amount0: int,
         amount1: int,
         hook_data: bytes,
-        custom_nonce: Optional[Nonce],
+        custom_nonce: Nonce | None,
     ):
         recipient = _addr_to_str(client.address)
         tx = client.increase_liquidity(
@@ -1111,7 +1111,7 @@ class TestUniswap4(object):
         client: Uniswap4,
         pool_key: PoolKey,
         hook_data: bytes,
-        custom_nonce: Optional[Nonce],
+        custom_nonce: Nonce | None,
     ):
         recipient = _addr_to_str(client.address)
         tx = client.collect_fees(
@@ -1147,7 +1147,7 @@ class TestUniswap4(object):
         amount0: int,
         amount1: int,
         hook_data: bytes,
-        custom_nonce: Optional[Nonce],
+        custom_nonce: Nonce | None,
     ):
         recipient = _addr_to_str(client.address)
         tx = client.decrease_liquidity(
@@ -1584,7 +1584,7 @@ class TestUniswap4(object):
         client: Uniswap4,
         pool_key: PoolKey,
         hook_data: bytes,
-        custom_nonce: Optional[Nonce],
+        custom_nonce: Nonce | None,
     ):
         recipient = _addr_to_str(client.address)
         # Removing liquidity before burning position, otherwise burn will revert since position is not empty
@@ -1640,13 +1640,13 @@ class TestUniswap4(object):
         self,
         client: Uniswap4,
     ):
-        commands: List = [
+        commands: list = [
             universal_router_commands["WRAP_ETH"],
         ]
-        actions: List = [
+        actions: list = [
             [],
         ]
-        params: List = [
+        params: list = [
             [
                 [
                     _addr_to_str(client.address),
@@ -1686,10 +1686,10 @@ class TestUniswap4(object):
         )
         qtycap = int((1 - client.max_slippage) * qtycap)
 
-        commands: List = [
+        commands: list = [
             universal_router_commands["V4_SWAP"],
         ]
-        actions: List = [
+        actions: list = [
             [
                 v4_actions["SWAP_EXACT_IN_SINGLE"],
                 v4_actions["SETTLE_ALL"],
@@ -1697,7 +1697,7 @@ class TestUniswap4(object):
             ],
         ]
 
-        params: List = [
+        params: list = [
             [
                 [
                     (
@@ -1753,14 +1753,14 @@ class TestUniswap4(object):
         ether_value = ONE_ETH
 
         # Executes a WRAP_ETH followed by a V4_SWAP in the same transaction
-        commands: List = [
+        commands: list = [
             universal_router_commands["WRAP_ETH"],
             universal_router_commands["V4_SWAP"],
         ]
 
         # List of actions for each command, in this case we have 0 action for the WRAP_ETH command and 3 actions for the V4_SWAP command (swap, settle and take)
         # As WRAP_ETH command does not require any action, we pass an empty list for it
-        actions: List = [
+        actions: list = [
             [],
             [
                 v4_actions["SWAP_EXACT_IN_SINGLE"],
@@ -1771,7 +1771,7 @@ class TestUniswap4(object):
 
         # List of parameters for each action, the first element of the list corresponds to the parameters for the WRAP_ETH command (recipient and amount),
         # and the second element corresponds to the parameters for each of the 3 actions of the V4_SWAP command
-        params: List = [
+        params: list = [
             [
                 [
                     _addr_to_str(client.address),

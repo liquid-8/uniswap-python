@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import time
@@ -7,9 +8,9 @@ from decimal import Decimal
 import eth_abi.abi
 from eth_abi import encode
 from eth_abi.packed import encode_packed
-from web3 import Web3
-from web3.contract import Contract
-from web3.contract.contract import ContractFunction
+from web3 import AsyncWeb3, Web3
+from web3.contract import AsyncContract
+from web3.contract.async_contract import AsyncContractFunction
 from web3.exceptions import BadFunctionCallOutput, ContractLogicError, NameNotFound
 from web3.types import (
     HexBytes,
@@ -50,7 +51,6 @@ from .types import (
 from .util import (
     _addr_to_str,
     _load_abi,
-    _load_contract,
     _str_to_addr,
     get_sqrt_ratio_at_tick,
     realised_fee_percentage,
@@ -59,12 +59,12 @@ from .util import (
 logger = logging.getLogger(__name__)
 
 
-class Uniswap4:
+class AsyncUniswap4:
     """
     Wrapper around Uniswap v4 contracts.
     """
 
-    w3: Web3
+    w3: AsyncWeb3
     address: AddressLike
     last_nonce: Nonce
 
@@ -73,7 +73,7 @@ class Uniswap4:
         address: str | AddressLike,
         private_key: str | None = None,
         provider: str | None = None,
-        web3: Web3 | None = None,
+        web3: AsyncWeb3 | None = None,
         max_slippage: float = 0.01,
         gas_limit: float = 250000.0,
         gas_price: float = 1.80,
@@ -103,11 +103,13 @@ class Uniswap4:
             self.w3 = web3
         else:
             self.provider = provider or os.environ["PROVIDER"]
-            self.w3 = Web3(
-                Web3.HTTPProvider(self.provider, request_kwargs={"timeout": 60})
+            self.w3 = AsyncWeb3(
+                AsyncWeb3.AsyncHTTPProvider(
+                    self.provider, request_kwargs={"timeout": 60}
+                )
             )
-
-        self.last_nonce = self.w3.eth.get_transaction_count(self.address)
+        temp_w3 = Web3(Web3.HTTPProvider(self.provider, request_kwargs={"timeout": 60}))
+        self.last_nonce = temp_w3.eth.get_transaction_count(self.address)
 
         # This code automatically approves you for trading on the exchange.
         # max_approval is to allow the contract to exchange on your behalf.
@@ -124,7 +126,7 @@ class Uniswap4:
         self.post_merge = post_merge
         self.priority_fee = priority_fee
 
-        chain_id = int(self.w3.net.version)
+        chain_id = int(temp_w3.net.version)
         self.net_id = chain_id
         if self.net_id in _netid_to_name:
             self.net_name = _netid_to_name[self.net_id]
@@ -227,7 +229,7 @@ class Uniswap4:
             logger.error(f"Error occurred while loading reserves lens contract: {e}")
 
     # Approvals
-    def approve(
+    async def approve(
         self,
         token: AddressLike,
         max_approval: int | None = None,
@@ -249,10 +251,10 @@ class Uniswap4:
                 _addr_to_str(self.permit2_address), max_approval
             )
             logger.info(f"Approving {_addr_to_str(token)} for PERMIT2...")
-            tx = self._build_and_send_tx(function)
+            tx = await self._build_and_send_tx(function)
             if delay_interval is None or delay_interval < 1:
                 delay_interval = 7
-            time.sleep(delay_interval)
+            await asyncio.sleep(delay_interval)
         else:
             raise ValueError("ETH needs no approval.")
         # Give an exchange/router max approval for a token.
@@ -262,18 +264,10 @@ class Uniswap4:
         function = self.permit2.functions.approve(
             _str_to_addr(token), self.router_address, max_approval, expiration
         )
-        tx = self._build_and_send_tx(function)
+        tx = await self._build_and_send_tx(function)
 
         if approve_position_manager:
-            # time.sleep(delay_interval)
-            # max_approval = self.max_approval_int
-            # function = self.erc20_contract(token).functions.approve(
-            #     _addr_to_str(self.position_manager_address), max_approval
-            # )
-            # logger.info(f"Approving {_addr_to_str(token)} for PositionManager...")
-            # tx = self._build_and_send_tx(function)
-
-            time.sleep(delay_interval)
+            await asyncio.sleep(delay_interval)
             max_approval = 2**100 - 1
             expiration = 10**12
             logger.info(
@@ -285,16 +279,18 @@ class Uniswap4:
                 max_approval,
                 expiration,
             )
-            tx = self._build_and_send_tx(function)
+            tx = await self._build_and_send_tx(function)
         return tx
 
-    def approval(self, token: AddressLike) -> int:
+    async def approval(self, token: AddressLike) -> int:
         """Returns the current allowance for the router to spend a token on the user's behalf. Note that this is not the allowance of the token itself, but the allowance set in the Permit2 contract for the router to spend the token."""
         # [0]=current allowance, [1]=allowance expiration [2]=current nonce
         result = int(
-            self.permit2.functions.allowance(
-                self.address, token, self.router.address
-            ).call()[0]
+            (
+                await self.permit2.functions.allowance(
+                    self.address, token, self.router.address
+                ).call()
+            )[0]
         )
         return result
 
@@ -336,12 +332,12 @@ class Uniswap4:
         self.max_slippage = max_slippage
 
     # Nonce management
-    def update_last_nonce(self) -> None:
+    async def update_last_nonce(self) -> None:
         """Updates the last nonce to the current nonce of the wallet. This can be used to resync the nonce if transactions have been sent outside of this class or custom nonce is used."""
-        self.last_nonce = self.w3.eth.get_transaction_count(self.address)
+        self.last_nonce = await self.w3.eth.get_transaction_count(self.address)
 
     # StateView methods
-    def stateview_get_fee_growth_globals(
+    async def stateview_get_fee_growth_globals(
         self,
         token0: str,
         token1: str,
@@ -357,7 +353,7 @@ class Uniswap4:
 
         pool = PoolKey(token0, token1, fee, tick_spacing, hooks)
         pool_id = self.get_pool_id(pool)
-        fee_growth_globals: dict = self.stateview.functions.getFeeGrowthGlobals(
+        fee_growth_globals: dict = await self.stateview.functions.getFeeGrowthGlobals(
             pool_id
         ).call()
         return_value = {
@@ -366,7 +362,7 @@ class Uniswap4:
         }
         return return_value
 
-    def stateview_get_fee_growth_inside(
+    async def stateview_get_fee_growth_inside(
         self,
         token0: str,
         token1: str,
@@ -384,7 +380,7 @@ class Uniswap4:
 
         pool = PoolKey(token0, token1, fee, tick_spacing, hooks)
         pool_id = self.get_pool_id(pool)
-        fee_growth_inside: dict = self.stateview.functions.getFeeGrowthInside(
+        fee_growth_inside: dict = await self.stateview.functions.getFeeGrowthInside(
             pool_id, tick_lower, tick_upper
         ).call()
         return_value = {
@@ -393,7 +389,7 @@ class Uniswap4:
         }
         return return_value
 
-    def stateview_get_liquidity(
+    async def stateview_get_liquidity(
         self,
         token0: str,
         token1: str,
@@ -408,10 +404,10 @@ class Uniswap4:
         pool = PoolKey(token0, token1, fee, tick_spacing, hooks)
         pool_id = self.get_pool_id(pool)
 
-        liquidity: int = self.stateview.functions.getLiquidity(pool_id).call()
+        liquidity: int = await self.stateview.functions.getLiquidity(pool_id).call()
         return liquidity
 
-    def stateview_get_position_info(
+    async def stateview_get_position_info(
         self,
         token0: str,
         token1: str,
@@ -435,7 +431,7 @@ class Uniswap4:
         pool_id = self.get_pool_id(pool)
 
         salt = HexBytes(token_id.to_bytes(32, byteorder="big"))
-        position_info: dict = self.stateview.functions.getPositionInfo(
+        position_info: dict = await self.stateview.functions.getPositionInfo(
             pool_id, owner, tick_lower, tick_upper, salt
         ).call()
         return_value = {
@@ -445,7 +441,7 @@ class Uniswap4:
         }
         return return_value
 
-    def stateview_get_slot0(
+    async def stateview_get_slot0(
         self,
         token0: str,
         token1: str,
@@ -462,7 +458,7 @@ class Uniswap4:
         pool = PoolKey(token0, token1, fee, tick_spacing, hooks)
         pool_id = self.get_pool_id(pool)
 
-        slot: dict = self.stateview.functions.getSlot0(pool_id).call()
+        slot: dict = await self.stateview.functions.getSlot0(pool_id).call()
         return_value = {
             "sqrtPriceX96": slot[0],
             "tick": slot[1],
@@ -471,7 +467,7 @@ class Uniswap4:
         }
         return return_value
 
-    def stateview_get_tick_bitmap(
+    async def stateview_get_tick_bitmap(
         self,
         token0: str,
         token1: str,
@@ -491,10 +487,12 @@ class Uniswap4:
         pool = PoolKey(token0, token1, fee, tick_spacing, hooks)
         pool_id = self.get_pool_id(pool)
 
-        tick_bitmap: int = self.stateview.functions.getTickBitmap(pool_id, tick).call()
+        tick_bitmap: int = await self.stateview.functions.getTickBitmap(
+            pool_id, tick
+        ).call()
         return tick_bitmap
 
-    def stateview_get_tick_fee_growth_outside(
+    async def stateview_get_tick_fee_growth_outside(
         self,
         token0: str,
         token1: str,
@@ -511,16 +509,16 @@ class Uniswap4:
 
         pool = PoolKey(token0, token1, fee, tick_spacing, hooks)
         pool_id = self.get_pool_id(pool)
-        fee_growth_outside: dict = self.stateview.functions.getTickFeeGrowthOutside(
-            pool_id, tick
-        ).call()
+        fee_growth_outside: dict = (
+            await self.stateview.functions.getTickFeeGrowthOutside(pool_id, tick).call()
+        )
         return_value = {
             "feeGrowthOutside0X128": fee_growth_outside[0],
             "feeGrowthOutside1X128": fee_growth_outside[1],
         }
         return return_value
 
-    def stateview_get_tick_pool_info(
+    async def stateview_get_tick_pool_info(
         self,
         token0: str,
         token1: str,
@@ -537,7 +535,9 @@ class Uniswap4:
 
         pool = PoolKey(token0, token1, fee, tick_spacing, hooks)
         pool_id = self.get_pool_id(pool)
-        tick_info: dict = self.stateview.functions.getTickInfo(pool_id, tick).call()
+        tick_info: dict = await self.stateview.functions.getTickInfo(
+            pool_id, tick
+        ).call()
         return_value = {
             "liquidityGross": tick_info[0],
             "liquidityNet": tick_info[1],
@@ -547,7 +547,7 @@ class Uniswap4:
         return return_value
 
     # ReservesLens methods
-    def reserves_lens_get_pool_tvl(
+    async def reserves_lens_get_pool_tvl(
         self, pool_key: PoolKey, custom_provider: str = ""
     ) -> dict:
         """
@@ -559,11 +559,11 @@ class Uniswap4:
         :returns: A dictionary containing the reserves of the pool.
         """
         if custom_provider == "":
-            reserves: dict = self.reserves_lens.functions.getPoolTVL(
+            reserves: dict = await self.reserves_lens.functions.getPoolTVL(
                 _addr_to_str(self.pool_manager_address), astuple(pool_key)
             ).call()
         else:
-            reserves = self.reserves_lens.functions.getPoolTVL(
+            reserves = await self.reserves_lens.functions.getPoolTVL(
                 _addr_to_str(self.pool_manager_address),
                 astuple(pool_key),
                 custom_provider,
@@ -586,7 +586,7 @@ class Uniswap4:
         }
         return return_value
 
-    def reserves_lens_get_pool_tvl_batch(
+    async def reserves_lens_get_pool_tvl_batch(
         self, pool_keys: list[PoolKey], custom_provider: list[str] | None = None
     ) -> list[dict]:
         """
@@ -600,12 +600,12 @@ class Uniswap4:
         if custom_provider is None:
             custom_provider = [""] * len(pool_keys)
 
-            reserves_list: list = self.reserves_lens.functions.getPoolTVLBatch(
+            reserves_list: list = await self.reserves_lens.functions.getPoolTVLBatch(
                 _addr_to_str(self.pool_manager_address),
                 [astuple(pool_key) for pool_key in pool_keys],
             ).call()
         else:
-            reserves_list = self.reserves_lens.functions.getPoolTVLBatch(
+            reserves_list = await self.reserves_lens.functions.getPoolTVLBatch(
                 _addr_to_str(self.pool_manager_address),
                 [astuple(pool_key) for pool_key in pool_keys],
                 custom_provider,
@@ -634,7 +634,7 @@ class Uniswap4:
 
         return return_value
 
-    def reserves_lens_get_tvl_paged(
+    async def reserves_lens_get_tvl_paged(
         self,
         pool_key: PoolKey,
         cursor: bytes,
@@ -652,23 +652,27 @@ class Uniswap4:
         :returns: A tuple containing the reserves dictionary, the next cursor, and a boolean indicating if the paged retrieval is done.
         """
         if custom_provider == "":
-            reserves_tuple, next_cursor, done = (
-                self.reserves_lens.functions.getPoolTVLPaged(
-                    _addr_to_str(self.pool_manager_address),
-                    astuple(pool_key),
-                    cursor,
-                ).call()
-            )
+            (
+                reserves_tuple,
+                next_cursor,
+                done,
+            ) = await self.reserves_lens.functions.getPoolTVLPaged(
+                _addr_to_str(self.pool_manager_address),
+                astuple(pool_key),
+                cursor,
+            ).call()
         else:
-            reserves_tuple, next_cursor, done = (
-                self.reserves_lens.functions.getPoolTVLPaged(
-                    _addr_to_str(self.pool_manager_address),
-                    astuple(pool_key),
-                    custom_provider,
-                    cursor,
-                    max_reads,
-                ).call()
-            )
+            (
+                reserves_tuple,
+                next_cursor,
+                done,
+            ) = await self.reserves_lens.functions.getPoolTVLPaged(
+                _addr_to_str(self.pool_manager_address),
+                astuple(pool_key),
+                custom_provider,
+                cursor,
+                max_reads,
+            ).call()
 
         reserves: dict = {
             "coreAmount0": reserves_tuple[0],
@@ -690,7 +694,7 @@ class Uniswap4:
         return_value = (reserves, next_cursor, done)
         return return_value
 
-    def reserves_lens_get_populated_ticks_in_word(
+    async def reserves_lens_get_populated_ticks_in_word(
         self, pool_key: PoolKey, word_position: int
     ) -> list[dict]:
         """
@@ -701,7 +705,7 @@ class Uniswap4:
         :param word_position: The position of the word to retrieve.
         :returns: A list of dictionaries containing the populated ticks.
         """
-        results: list = self.reserves_lens.functions.getPopulatedTicksInWord(
+        results: list = await self.reserves_lens.functions.getPopulatedTicksInWord(
             _addr_to_str(self.pool_manager_address),
             astuple(pool_key),
             word_position,
@@ -718,7 +722,9 @@ class Uniswap4:
         return return_value
 
     # PositionDescriptor methods
-    def position_descriptor_get_currency_ratio_priority(self, currency: str) -> int:
+    async def position_descriptor_get_currency_ratio_priority(
+        self, currency: str
+    ) -> int:
         """
         For certain currencies on mainnet, the smaller the currency, the higher the priority.
         And those with the higher priority values (more positive values) will be in the numerator of the price ratio
@@ -726,42 +732,50 @@ class Uniswap4:
         :returns: The priority of a currency.
         """
         ratio_priority: int = int(
-            self.position_descriptor.functions.currencyRatioPriority(currency).call()
+            await self.position_descriptor.functions.currencyRatioPriority(
+                currency
+            ).call()
         )
         return_value = ratio_priority
         return return_value
 
-    def position_descriptor_get_flip_ratio(
+    async def position_descriptor_get_flip_ratio(
         self, currency0: str, currency1: str
     ) -> bool:
         """
         :returns: True if currency0 has higher priority than currency1
         """
         flip_ratio: bool = bool(
-            self.position_descriptor.functions.flipRatio(currency0, currency1).call()
+            await self.position_descriptor.functions.flipRatio(
+                currency0, currency1
+            ).call()
         )
         return_value = flip_ratio
         return return_value
 
-    def position_descriptor_get_native_currency_label(self) -> str:
+    async def position_descriptor_get_native_currency_label(self) -> str:
         """
         :returns: The label for the native currency as a string
         """
         native_currency_label: str = str(
-            self.position_descriptor.functions.nativeCurrencyLabel().call()
+            await self.position_descriptor.functions.nativeCurrencyLabel().call()
         )
         return_value = native_currency_label
         return return_value
 
-    def position_descriptor_get_pool_manager(self) -> str:
+    async def position_descriptor_get_pool_manager(self) -> str:
         """
         :returns: PoolManager address as a string
         """
-        pool_manager: str = str(self.position_descriptor.functions.poolManager().call())
+        pool_manager: str = str(
+            await self.position_descriptor.functions.poolManager().call()
+        )
         return_value = pool_manager
         return return_value
 
-    def position_descriptor_get_token_uri(self, pos_manager: str, token_id: int) -> str:
+    async def position_descriptor_get_token_uri(
+        self, pos_manager: str, token_id: int
+    ) -> str:
         """
         Produces the URI describing a particular token ID
         Note this URI may be a data: URI with the JSON contents directly inlined
@@ -769,68 +783,75 @@ class Uniswap4:
         :returns: The URI of the ERC721-compliant metadata
         """
         token_uri: str = str(
-            self.position_descriptor.functions.tokenURI(pos_manager, token_id).call()
+            await self.position_descriptor.functions.tokenURI(
+                pos_manager, token_id
+            ).call()
         )
         return_value = token_uri
         return return_value
 
-    def position_descriptor_get_wrapped_native_address(self) -> str:
+    async def position_descriptor_get_wrapped_native_address(self) -> str:
         """
         :returns: The wrapped native currency address as a string
         """
         wrapped_native_address: str = str(
-            self.position_descriptor.functions.wrappedNative().call()
+            await self.position_descriptor.functions.wrappedNative().call()
         )
         return_value = wrapped_native_address
         return return_value
 
     # PositionManager methods
     # Read methods
-    def position_manager_get_domain_separator(
+    async def position_manager_get_domain_separator(
         self,
     ) -> bytes:
         """
         :returns: The domain separator for the current chain; bytes32
         """
         domain_separator: bytes = bytes(
-            self.position_manager.functions.DOMAIN_SEPARATOR().call()
+            await self.position_manager.functions.DOMAIN_SEPARATOR().call()
         )
         return_value = domain_separator
         return return_value
 
-    def position_manager_get_weth9(
+    async def position_manager_get_weth9(
         self,
     ) -> str:
         """
         :returns: The wrapped native token address
         """
-        weth9: str = str(self.position_manager.functions.WETH9().call())
+        weth9: str = str(await self.position_manager.functions.WETH9().call())
         return_value = weth9
         return return_value
 
-    def position_manager_get_balance_of(self, address: str) -> int:
+    async def position_manager_get_balance_of(self, address: str) -> int:
         """
         :returns: The number of tokens in owner's address.
         """
-        balance: int = int(self.position_manager.functions.balanceOf(address).call())
+        balance: int = int(
+            await self.position_manager.functions.balanceOf(address).call()
+        )
         return_value = balance
         return return_value
 
-    def position_manager_get_approved(self, token_id: int) -> str:
+    async def position_manager_get_approved(self, token_id: int) -> str:
         """
         :returns: The account approved for a token.
         """
         operator: str = str(
-            self.position_manager.functions.getApproved(token_id).call()
+            await self.position_manager.functions.getApproved(token_id).call()
         )
         return_value = operator
         return return_value
 
-    def position_manager_get_pool_and_position_info(self, token_id: int) -> dict:
+    async def position_manager_get_pool_and_position_info(self, token_id: int) -> dict:
         """
         :returns: The PoolKey class object and position info of a position
         """
-        pool_key_tuple, info = self.position_manager.functions.getPoolAndPositionInfo(
+        (
+            pool_key_tuple,
+            info,
+        ) = await self.position_manager.functions.getPoolAndPositionInfo(
             token_id
         ).call()
         pool_key: PoolKey = PoolKey(*pool_key_tuple)
@@ -840,29 +861,31 @@ class Uniswap4:
         }
         return return_value
 
-    def position_manager_get_position_liquidity(self, token_id: int) -> int:
+    async def position_manager_get_position_liquidity(self, token_id: int) -> int:
         """
         :returns: The liquidity of a position
         """
         position_liquidity: int = int(
-            self.position_manager.functions.getPositionLiquidity(token_id).call()
+            await self.position_manager.functions.getPositionLiquidity(token_id).call()
         )
         return_value = position_liquidity
         return return_value
 
-    def position_manager_get_is_approved_for_all(
+    async def position_manager_get_is_approved_for_all(
         self, owner: str, operator: str
     ) -> bool:
         """
         :returns: True if the operator is allowed to manage all of the assets of owner
         """
         is_approved_for_all: bool = bool(
-            self.position_manager.functions.isApprovedForAll(owner, operator).call()
+            await self.position_manager.functions.isApprovedForAll(
+                owner, operator
+            ).call()
         )
         return_value = is_approved_for_all
         return return_value
 
-    def position_manager_get_msg_sender(
+    async def position_manager_get_msg_sender(
         self,
     ) -> str:
         """
@@ -874,87 +897,93 @@ class Uniswap4:
         the v4 pool manager contract that calls `unlockCallback`
         If using ReentrancyLock.sol, this function can return _getLocker()
         """
-        msg_sender: str = str(self.position_manager.functions.msgSender().call())
+        msg_sender: str = str(await self.position_manager.functions.msgSender().call())
         return_value = msg_sender
         return return_value
 
-    def position_manager_get_name(
+    async def position_manager_get_name(
         self,
     ) -> str:
         """
         :returns: The name of the PositionManager token
         """
-        name: str = str(self.position_manager.functions.name().call())
+        name: str = str(await self.position_manager.functions.name().call())
         return_value = name
         return return_value
 
-    def position_manager_get_next_token_id(
+    async def position_manager_get_next_token_id(
         self,
     ) -> int:
         """
         :returns: The ID that will be used for the next minted liquidity position
         """
-        next_token_id: int = int(self.position_manager.functions.nextTokenId().call())
+        next_token_id: int = int(
+            await self.position_manager.functions.nextTokenId().call()
+        )
         return_value = next_token_id
         return return_value
 
-    def position_manager_get_nonces(self, owner: str, word: int) -> int:
+    async def position_manager_get_nonces(self, owner: str, word: int) -> int:
         """
         :returns: Mapping of nonces consumed by each address, where a nonce is a single bit on the 256-bit bitmap
         """
-        bitmap: int = int(self.position_manager.functions.nonces(owner, word).call())
+        bitmap: int = int(
+            await self.position_manager.functions.nonces(owner, word).call()
+        )
         return_value = bitmap
         return return_value
 
-    def position_manager_get_owner_of(self, token_id: int) -> str:
+    async def position_manager_get_owner_of(self, token_id: int) -> str:
         """
         :returns: The owner of the position for a given token ID
         """
-        owner: str = str(self.position_manager.functions.ownerOf(token_id).call())
+        owner: str = str(await self.position_manager.functions.ownerOf(token_id).call())
         return_value = owner
         return return_value
 
-    def position_manager_get_permit2(
+    async def position_manager_get_permit2(
         self,
     ) -> str:
         """
         :returns: The Permit2 contract to forward approvals
         """
-        permit2: str = str(self.position_manager.functions.permit2().call())
+        permit2: str = str(await self.position_manager.functions.permit2().call())
         return_value = permit2
         return return_value
 
-    def position_manager_get_pool_keys(self, pool_id_trunc: bytes) -> PoolKey:
+    async def position_manager_get_pool_keys(self, pool_id_trunc: bytes) -> PoolKey:
         """
         :param pool_id_trunc: The truncated ID of the pool, first 25 bytes of common pool_id
         :returns: The PoolKey class object for a given token ID
         """
-        pool_keys_tuple = self.position_manager.functions.poolKeys(pool_id_trunc).call()
+        pool_keys_tuple = await self.position_manager.functions.poolKeys(
+            pool_id_trunc
+        ).call()
         pool_keys: PoolKey = PoolKey(*pool_keys_tuple)
         return_value = pool_keys
         return return_value
 
-    def position_manager_get_position_info(self, token_id: int) -> int:
+    async def position_manager_get_position_info(self, token_id: int) -> int:
         """
         :returns: The position info for a given token ID
         """
         position_info: int = int(
-            self.position_manager.functions.positionInfo(token_id).call()
+            await self.position_manager.functions.positionInfo(token_id).call()
         )
         return_value = position_info
         return return_value
 
-    def position_manager_get_subscriber(self, token_id: int) -> str:
+    async def position_manager_get_subscriber(self, token_id: int) -> str:
         """
         :returns: The subscriber of the position for a given token ID
         """
         subscriber: str = str(
-            self.position_manager.functions.subscriber(token_id).call()
+            await self.position_manager.functions.subscriber(token_id).call()
         )
         return_value = subscriber
         return return_value
 
-    def position_manager_get_is_support_interface(
+    async def position_manager_get_is_support_interface(
         self,
         interface_id: bytes,
     ) -> bool:
@@ -965,62 +994,62 @@ class Uniswap4:
         if len(interface_id) != 4:
             raise ValueError("interface_id should be 4 bytes long")
         is_supported: bool = bool(
-            self.position_manager.functions.supportsInterface(interface_id).call()
+            await self.position_manager.functions.supportsInterface(interface_id).call()
         )
         return_value = is_supported
         return return_value
 
-    def position_manager_get_symbol(
+    async def position_manager_get_symbol(
         self,
     ) -> str:
         """
         :returns: The symbol of the PositionManager token
         """
-        symbol: str = str(self.position_manager.functions.symbol().call())
+        symbol: str = str(await self.position_manager.functions.symbol().call())
         return_value = symbol
         return return_value
 
-    def position_manager_get_token_descriptor(
+    async def position_manager_get_token_descriptor(
         self,
     ) -> str:
         """
         :returns: The address of the PositionDescriptor contract as a string
         """
         token_descriptor: str = str(
-            self.position_manager.functions.tokenDescriptor().call()
+            await self.position_manager.functions.tokenDescriptor().call()
         )
         return_value = token_descriptor
         return return_value
 
-    def position_manager_get_position_uri(self, token_id: int) -> str:
+    async def position_manager_get_position_uri(self, token_id: int) -> str:
         """
         :returns: The URI of the position manager's ERC721-compliant metadata for a given token ID
         """
-        uri: str = str(self.position_manager.functions.tokenURI(token_id).call())
+        uri: str = str(await self.position_manager.functions.tokenURI(token_id).call())
         return_value = uri
         return return_value
 
-    def position_manager_get_unsubscribe_gas_limit(self) -> int:
+    async def position_manager_get_unsubscribe_gas_limit(self) -> int:
         """
         :returns: The gas limit used when unsubscribing from a position.
         """
         unsubscribe_gas_limit: int = (
-            self.position_manager.functions.unsubscribeGasLimit().call()
+            await self.position_manager.functions.unsubscribeGasLimit().call()
         )
         return_value = unsubscribe_gas_limit
         return return_value
 
     # Write methods
-    def position_manager_approve(self, spender: str, token_id: int) -> HexBytes:
+    async def position_manager_approve(self, spender: str, token_id: int) -> HexBytes:
         """
         Change or reaffirm the approved address for an NFT
         Zero address removes existing approval.
         """
         function = self.position_manager.functions.approve(spender, token_id)
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
-    def position_manager_initialize_pool(
+    async def position_manager_initialize_pool(
         self, pool_key: PoolKey, sqrt_price_x96: int, payable_amount: int
     ) -> HexBytes:
         """
@@ -1029,12 +1058,12 @@ class Uniswap4:
         function = self.position_manager.functions.initializePool(
             astuple(pool_key), sqrt_price_x96
         )
-        tx = self._build_and_send_tx(
-            function, self._get_tx_params(value=payable_amount)
+        tx = await self._build_and_send_tx(
+            function, await self._get_tx_params(value=payable_amount)
         )
         return tx
 
-    def position_manager_modify_liquidities(
+    async def position_manager_modify_liquidities(
         self, unlock_data: bytes, deadline: int, payable_amount: int
     ) -> HexBytes:
         """
@@ -1043,12 +1072,12 @@ class Uniswap4:
         function = self.position_manager.functions.modifyLiquidities(
             unlock_data, deadline
         )
-        tx = self._build_and_send_tx(
-            function, self._get_tx_params(value=payable_amount)
+        tx = await self._build_and_send_tx(
+            function, await self._get_tx_params(value=payable_amount)
         )
         return tx
 
-    def position_manager_modify_liquidities_without_unlock(
+    async def position_manager_modify_liquidities_without_unlock(
         self, actions: bytes, params: list[bytes], payable_amount: int
     ) -> HexBytes:
         """
@@ -1059,24 +1088,24 @@ class Uniswap4:
         function = self.position_manager.functions.modifyLiquiditiesWithoutUnlock(
             actions, params
         )
-        tx = self._build_and_send_tx(
-            function, self._get_tx_params(value=payable_amount)
+        tx = await self._build_and_send_tx(
+            function, await self._get_tx_params(value=payable_amount)
         )
         return tx
 
-    def position_manager_multicall(
+    async def position_manager_multicall(
         self, data: list[bytes], payable_amount: int
     ) -> HexBytes:
         """
         Call multiple functions in the current contract in a single transaction, with the possibility of sending ETH along with the calls.
         """
         function = self.position_manager.functions.multicall(data)
-        tx = self._build_and_send_tx(
-            function, self._get_tx_params(value=payable_amount)
+        tx = await self._build_and_send_tx(
+            function, await self._get_tx_params(value=payable_amount)
         )
         return tx
 
-    def position_manager_permit(
+    async def position_manager_permit(
         self,
         spender: str,
         token_id: int,
@@ -1091,12 +1120,12 @@ class Uniswap4:
         function = self.position_manager.functions.permit(
             spender, token_id, deadline, nonce, signature
         )
-        tx = self._build_and_send_tx(
-            function, self._get_tx_params(value=payable_amount)
+        tx = await self._build_and_send_tx(
+            function, await self._get_tx_params(value=payable_amount)
         )
         return tx
 
-    def position_manager_permit2_single(
+    async def position_manager_permit2_single(
         self,
         owner: str,
         permit_single: PermitSingle,
@@ -1109,12 +1138,12 @@ class Uniswap4:
         function = self.position_manager.functions.permit(
             owner, astuple(permit_single), signature
         )
-        tx = self._build_and_send_tx(
-            function, self._get_tx_params(value=payable_amount)
+        tx = await self._build_and_send_tx(
+            function, await self._get_tx_params(value=payable_amount)
         )
         return tx
 
-    def position_manager_permit2_batch(
+    async def position_manager_permit2_batch(
         self,
         owner: str,
         permit_batch: PermitBatch,
@@ -1127,12 +1156,12 @@ class Uniswap4:
         function = self.position_manager.functions.permit(
             owner, astuple(permit_batch), signature
         )
-        tx = self._build_and_send_tx(
-            function, self._get_tx_params(value=payable_amount)
+        tx = await self._build_and_send_tx(
+            function, await self._get_tx_params(value=payable_amount)
         )
         return tx
 
-    def position_manager_permit_for_all(
+    async def position_manager_permit_for_all(
         self,
         owner: str,
         operator: str,
@@ -1148,24 +1177,24 @@ class Uniswap4:
         function = self.position_manager.functions.permitForAll(
             owner, operator, approved, deadline, nonce, signature
         )
-        tx = self._build_and_send_tx(
-            function, self._get_tx_params(value=payable_amount)
+        tx = await self._build_and_send_tx(
+            function, await self._get_tx_params(value=payable_amount)
         )
         return tx
 
-    def position_manager_revoke_nonce(
+    async def position_manager_revoke_nonce(
         self, nonce: int, payable_amount: int
     ) -> HexBytes:
         """
         Revoke a nonce by spending it, preventing it from being used again
         """
         function = self.position_manager.functions.revokeNonce(nonce)
-        tx = self._build_and_send_tx(
-            function, self._get_tx_params(value=payable_amount)
+        tx = await self._build_and_send_tx(
+            function, await self._get_tx_params(value=payable_amount)
         )
         return tx
 
-    def position_manager_safe_transfer_from(
+    async def position_manager_safe_transfer_from(
         self, from_addr: str, to_addr: str, token_id: int, payable_amount: int
     ) -> HexBytes:
         """
@@ -1174,12 +1203,12 @@ class Uniswap4:
         function = self.position_manager.functions.safeTransferFrom(
             from_addr, to_addr, token_id
         )
-        tx = self._build_and_send_tx(
-            function, self._get_tx_params(value=payable_amount)
+        tx = await self._build_and_send_tx(
+            function, await self._get_tx_params(value=payable_amount)
         )
         return tx
 
-    def position_manager_safe_transfer_from_with_data(
+    async def position_manager_safe_transfer_from_with_data(
         self,
         from_addr: str,
         to_addr: str,
@@ -1193,24 +1222,24 @@ class Uniswap4:
         function = self.position_manager.functions.safeTransferFrom(
             from_addr, to_addr, token_id, data
         )
-        tx = self._build_and_send_tx(
-            function, self._get_tx_params(value=payable_amount)
+        tx = await self._build_and_send_tx(
+            function, await self._get_tx_params(value=payable_amount)
         )
         return tx
 
-    def position_manager_set_approval_for_all(
+    async def position_manager_set_approval_for_all(
         self, operator: str, approved: bool, payable_amount: int
     ) -> HexBytes:
         """
         Enable or disable approval for a third party ("operator") to manage all of `msg.sender`'s assets
         """
         function = self.position_manager.functions.setApprovalForAll(operator, approved)
-        tx = self._build_and_send_tx(
-            function, self._get_tx_params(value=payable_amount)
+        tx = await self._build_and_send_tx(
+            function, await self._get_tx_params(value=payable_amount)
         )
         return tx
 
-    def position_manager_subscribe(
+    async def position_manager_subscribe(
         self, token_id: int, new_subscriber: str, data: bytes, payable_amount: int
     ) -> HexBytes:
         """
@@ -1219,12 +1248,12 @@ class Uniswap4:
         function = self.position_manager.functions.subscribe(
             token_id, new_subscriber, data
         )
-        tx = self._build_and_send_tx(
-            function, self._get_tx_params(value=payable_amount)
+        tx = await self._build_and_send_tx(
+            function, await self._get_tx_params(value=payable_amount)
         )
         return tx
 
-    def position_manager_transfer_from(
+    async def position_manager_transfer_from(
         self, from_addr: str, to_addr: str, token_id: int, payable_amount: int
     ) -> HexBytes:
         """
@@ -1233,130 +1262,130 @@ class Uniswap4:
         function = self.position_manager.functions.transferFrom(
             from_addr, to_addr, token_id
         )
-        tx = self._build_and_send_tx(
-            function, self._get_tx_params(value=payable_amount)
+        tx = await self._build_and_send_tx(
+            function, await self._get_tx_params(value=payable_amount)
         )
         return tx
 
-    def position_manager_unsubscribe(
+    async def position_manager_unsubscribe(
         self, token_id: int, payable_amount: int
     ) -> HexBytes:
         """
         Removes the subscriber from receiving notifications for a respective position
         """
         function = self.position_manager.functions.unsubscribe(token_id)
-        tx = self._build_and_send_tx(
-            function, self._get_tx_params(value=payable_amount)
+        tx = await self._build_and_send_tx(
+            function, await self._get_tx_params(value=payable_amount)
         )
         return tx
 
     # PoolManager methods
     # Read methods
-    def pool_manager_get_allowance(
+    async def pool_manager_get_allowance(
         self, owner: str, spender: str, token_id: int
     ) -> int:
         """
         Spender allowance of an id.
         """
         allowance: int = int(
-            self.pool_manager.functions.allowance(owner, spender, token_id).call()
+            await self.pool_manager.functions.allowance(owner, spender, token_id).call()
         )
         return_value = allowance
         return return_value
 
-    def pool_manager_get_balance_of(self, address: str, token_id: int) -> int:
+    async def pool_manager_get_balance_of(self, address: str, token_id: int) -> int:
         """
         The number of tokens in owner's address.
         """
         balance: int = int(
-            self.pool_manager.functions.balanceOf(address, token_id).call()
+            await self.pool_manager.functions.balanceOf(address, token_id).call()
         )
         return_value = balance
         return return_value
 
-    def pool_manager_get_extsload(self, slot: bytes) -> bytes:
+    async def pool_manager_get_extsload(self, slot: bytes) -> bytes:
         """
         Called by external contracts to access granular pool state
         """
-        value: bytes = self.pool_manager.functions.extsload(slot).call()
+        value: bytes = await self.pool_manager.functions.extsload(slot).call()
         return_value = value
         return return_value
 
-    def pool_manager_get_extsload_sequence(
+    async def pool_manager_get_extsload_sequence(
         self, start_slot: bytes, slots_count: int
     ) -> list[bytes]:
         """
         Called by external contracts to access a sequence of storage slots
         """
-        value: list[bytes] = self.pool_manager.functions.extsload(
+        value: list[bytes] = await self.pool_manager.functions.extsload(
             start_slot, slots_count
         ).call()
         return_value = value
         return return_value
 
-    def pool_manager_get_extsload_sparse(self, slots: list[bytes]) -> list[bytes]:
+    async def pool_manager_get_extsload_sparse(self, slots: list[bytes]) -> list[bytes]:
         """
         Called by external contracts to access a sparse set of storage slots
         """
-        value: list[bytes] = self.pool_manager.functions.extsload(slots).call()
+        value: list[bytes] = await self.pool_manager.functions.extsload(slots).call()
         return_value = value
         return return_value
 
-    def pool_manager_get_exttload_sparse(self, slots: list[bytes]) -> list[bytes]:
+    async def pool_manager_get_exttload_sparse(self, slots: list[bytes]) -> list[bytes]:
         """
         Called by external contracts to access sparse transient pool state
         """
-        value: list[bytes] = self.pool_manager.functions.exttload(slots).call()
+        value: list[bytes] = await self.pool_manager.functions.exttload(slots).call()
         return_value = value
         return return_value
 
-    def pool_manager_get_exttload(self, slot: bytes) -> bytes:
+    async def pool_manager_get_exttload(self, slot: bytes) -> bytes:
         """
         Called by external contracts to access transient storage of the contract
         """
-        value: bytes = self.pool_manager.functions.exttload(slot).call()
+        value: bytes = await self.pool_manager.functions.exttload(slot).call()
         return_value = value
         return return_value
 
-    def pool_manager_get_is_operator(self, owner: str, operator: str) -> bool:
+    async def pool_manager_get_is_operator(self, owner: str, operator: str) -> bool:
         """
         Checks if a spender is approved by an owner as an operator
         """
-        is_operator: bool = self.pool_manager.functions.isOperator(
+        is_operator: bool = await self.pool_manager.functions.isOperator(
             owner, operator
         ).call()
         return_value = is_operator
         return return_value
 
-    def pool_manager_get_owner(self) -> str:
+    async def pool_manager_get_owner(self) -> str:
         """
         Retrieve the contract owner.
         """
-        owner: str = str(self.pool_manager.functions.owner().call())
+        owner: str = str(await self.pool_manager.functions.owner().call())
         return_value = owner
         return return_value
 
-    def pool_manager_get_protocol_fee_controller(self) -> str:
+    async def pool_manager_get_protocol_fee_controller(self) -> str:
         """
         Returns the current protocol fee controller address
         """
         protocol_fee_controller: str = str(
-            self.pool_manager.functions.protocolFeeController().call()
+            await self.pool_manager.functions.protocolFeeController().call()
         )
         return_value = protocol_fee_controller
         return return_value
 
-    def pool_manager_get_protocol_fees_accrued(self, address: str) -> int:
+    async def pool_manager_get_protocol_fees_accrued(self, address: str) -> int:
         """
         Given a currency address, returns the protocol fees accrued in that currency.
         """
         protocol_fees_accrued: int = int(
-            self.pool_manager.functions.protocolFeesAccrued(address).call()
+            await self.pool_manager.functions.protocolFeesAccrued(address).call()
         )
         return_value = protocol_fees_accrued
         return return_value
 
-    def pool_manager_get_supports_interface(self, interface_id: bytes) -> bool:
+    async def pool_manager_get_supports_interface(self, interface_id: bytes) -> bool:
         """
         Checks if a given interface ID is supported by the contract
 
@@ -1366,31 +1395,33 @@ class Uniswap4:
         if len(interface_id) != 4:
             raise ValueError("interface_id should be 4 bytes long")
         supports_interface: bool = bool(
-            self.pool_manager.functions.supportsInterface(interface_id).call()
+            await self.pool_manager.functions.supportsInterface(interface_id).call()
         )
         return_value = supports_interface
         return return_value
 
     # Write methods
-    def pool_manager_approve(
+    async def pool_manager_approve(
         self, spender: str, token_id: int, amount: int
     ) -> HexBytes:
         """
         Approves an amount of an id to a spender.
         """
         function = self.pool_manager.functions.approve(spender, token_id, amount)
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
-    def pool_manager_burn(self, from_addr: str, token_id: int, amount: int) -> HexBytes:
+    async def pool_manager_burn(
+        self, from_addr: str, token_id: int, amount: int
+    ) -> HexBytes:
         """
         Called by the user to move value from ERC6909 balance.
         """
         function = self.pool_manager.functions.burn(from_addr, token_id, amount)
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
-    def pool_manager_clear(self, currency: str, amount: int) -> HexBytes:
+    async def pool_manager_clear(self, currency: str, amount: int) -> HexBytes:
         """
         !!!WARNING!!! - Any currency that is cleared, will be non-retrievable, and locked in the contract permanently.
         A call to clear will zero out a positive balance WITHOUT a corresponding transfer.
@@ -1399,10 +1430,10 @@ class Uniswap4:
         This is to enforce that the caller is aware of the amount being cleared.
         """
         function = self.pool_manager.functions.clear(currency, amount)
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
-    def pool_manager_collect_protocol_fees(
+    async def pool_manager_collect_protocol_fees(
         self, recipient: str, currency: str, amount: int
     ) -> HexBytes:
         """
@@ -1412,10 +1443,10 @@ class Uniswap4:
         function = self.pool_manager.functions.collectProtocolFees(
             recipient, currency, amount
         )
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
-    def pool_manager_donate(
+    async def pool_manager_donate(
         self, pool_key: PoolKey, amount0: int, amount1: int, hook_data: bytes
     ) -> HexBytes:
         """
@@ -1424,10 +1455,10 @@ class Uniswap4:
         function = self.pool_manager.functions.donate(
             astuple(pool_key), amount0, amount1, hook_data
         )
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
-    def pool_manager_initialize(
+    async def pool_manager_initialize(
         self, pool_key: PoolKey, sqrt_price_x96: int
     ) -> HexBytes:
         """
@@ -1436,18 +1467,20 @@ class Uniswap4:
         function = self.pool_manager.functions.initialize(
             astuple(pool_key), sqrt_price_x96
         )
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
-    def pool_manager_mint(self, to_addr: str, token_id: int, amount: int) -> HexBytes:
+    async def pool_manager_mint(
+        self, to_addr: str, token_id: int, amount: int
+    ) -> HexBytes:
         """
         Called by the user to move value into ERC6909 balance.
         """
         function = self.pool_manager.functions.mint(to_addr, token_id, amount)
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
-    def pool_manager_modify_liquidity(
+    async def pool_manager_modify_liquidity(
         self,
         pool_key: PoolKey,
         liquidity_params: ModifyLiquidityParams,
@@ -1459,18 +1492,20 @@ class Uniswap4:
         function = self.pool_manager.functions.modifyLiquidity(
             astuple(pool_key), astuple(liquidity_params), hook_data
         )
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
-    def pool_manager_set_operator(self, operator: str, approved: bool) -> HexBytes:
+    async def pool_manager_set_operator(
+        self, operator: str, approved: bool
+    ) -> HexBytes:
         """
         Sets or removes an operator for the caller.
         """
         function = self.pool_manager.functions.setOperator(operator, approved)
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
-    def pool_manager_set_protocol_fee(
+    async def pool_manager_set_protocol_fee(
         self, pool_key: PoolKey, new_protocol_fee: int
     ) -> HexBytes:
         """
@@ -1479,38 +1514,42 @@ class Uniswap4:
         function = self.pool_manager.functions.setProtocolFee(
             astuple(pool_key), new_protocol_fee
         )
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
-    def pool_manager_set_protocol_fee_controller(self, controller: str) -> HexBytes:
+    async def pool_manager_set_protocol_fee_controller(
+        self, controller: str
+    ) -> HexBytes:
         """
         Sets a new protocol fee controller.
         """
         function = self.pool_manager.functions.setProtocolFeeController(controller)
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
-    def pool_manager_settle(self, payable_amount: int) -> HexBytes:
+    async def pool_manager_settle(self, payable_amount: int) -> HexBytes:
         """
         Called by the user to pay what is owed.
         """
         function = self.pool_manager.functions.settle()
-        tx = self._build_and_send_tx(
-            function, self._get_tx_params(value=payable_amount)
+        tx = await self._build_and_send_tx(
+            function, await self._get_tx_params(value=payable_amount)
         )
         return tx
 
-    def pool_manager_settle_for(self, recipient: str, payable_amount: int) -> HexBytes:
+    async def pool_manager_settle_for(
+        self, recipient: str, payable_amount: int
+    ) -> HexBytes:
         """
         Called by the user to pay on behalf of another address.
         """
         function = self.pool_manager.functions.settleFor(recipient)
-        tx = self._build_and_send_tx(
-            function, self._get_tx_params(value=payable_amount)
+        tx = await self._build_and_send_tx(
+            function, await self._get_tx_params(value=payable_amount)
         )
         return tx
 
-    def pool_manager_swap(
+    async def pool_manager_swap(
         self, pool_key: PoolKey, params: SwapParams, hook_data: bytes
     ) -> HexBytes:
         """
@@ -1519,38 +1558,40 @@ class Uniswap4:
         function = self.pool_manager.functions.swap(
             astuple(pool_key), astuple(params), hook_data
         )
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
-    def pool_manager_sync(self, currency: str) -> HexBytes:
+    async def pool_manager_sync(self, currency: str) -> HexBytes:
         """
         Writes the current ERC20 balance of the specified currency to transient storage.
         This is used to checkpoint balances for the manager and derive deltas for the caller.
         This MUST be called before any ERC20 tokens are sent into the contract, see documentation for more details.
         """
         function = self.pool_manager.functions.sync(currency)
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
-    def pool_manager_take(self, currency: str, to_addr: str, amount: int) -> HexBytes:
+    async def pool_manager_take(
+        self, currency: str, to_addr: str, amount: int
+    ) -> HexBytes:
         """
         Called by the user to net out some value owed to the user.
         """
         function = self.pool_manager.functions.take(currency, to_addr, amount)
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
-    def pool_manager_transfer(
+    async def pool_manager_transfer(
         self, to_addr: str, token_id: int, amount: int
     ) -> HexBytes:
         """
         Transfers an amount of an id from the caller to a receiver.
         """
         function = self.pool_manager.functions.transfer(to_addr, token_id, amount)
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
-    def pool_manager_transfer_from(
+    async def pool_manager_transfer_from(
         self, sender: str, receiver: str, token_id: int, amount: int
     ) -> HexBytes:
         """
@@ -1559,28 +1600,28 @@ class Uniswap4:
         function = self.pool_manager.functions.transferFrom(
             sender, receiver, token_id, amount
         )
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
-    def pool_manager_transfer_ownership(self, new_owner: str) -> HexBytes:
+    async def pool_manager_transfer_ownership(self, new_owner: str) -> HexBytes:
         """
         Transfers ownership of the contract to a new owner.
         """
         function = self.pool_manager.functions.transferOwnership(new_owner)
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
-    def pool_manager_unlock(self, data: bytes) -> HexBytes:
+    async def pool_manager_unlock(self, data: bytes) -> HexBytes:
         """
         All interactions on the contract that account deltas require unlocking.
         A caller that calls `unlock` must implement `IUnlockCallback(msg.sender).unlockCallback(data)`,
         where they interact with the remaining functions on this contract.
         """
         function = self.pool_manager.functions.unlock(data)
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
-    def pool_manager_update_dynamic_lp_fee(
+    async def pool_manager_update_dynamic_lp_fee(
         self, pool_key: PoolKey, new_dynamic_lp_fee: int
     ) -> HexBytes:
         """
@@ -1589,11 +1630,11 @@ class Uniswap4:
         function = self.pool_manager.functions.updateDynamicLPFee(
             astuple(pool_key), new_dynamic_lp_fee
         )
-        tx = self._build_and_send_tx(function, self._get_tx_params())
+        tx = await self._build_and_send_tx(function, await self._get_tx_params())
         return tx
 
     # Tokens price functions
-    def get_token_token_spot_price(
+    async def get_token_token_spot_price(
         self,
         token0: str,
         token1: str,
@@ -1611,19 +1652,19 @@ class Uniswap4:
         """
 
         if token0.lower() < token1.lower():
-            den0 = self.get_token(_str_to_addr(token0)).decimals
-            den1 = self.get_token(_str_to_addr(token1)).decimals
+            den0 = (await self.get_token(_str_to_addr(token0))).decimals
+            den1 = (await self.get_token(_str_to_addr(token1))).decimals
             zero_for_one = True
         else:
-            den0 = self.get_token(_str_to_addr(token1)).decimals
-            den1 = self.get_token(_str_to_addr(token0)).decimals
+            den0 = (await self.get_token(_str_to_addr(token1))).decimals
+            den1 = (await self.get_token(_str_to_addr(token0))).decimals
             zero_for_one = False
 
         if token0.lower() > token1.lower():
             token1, token0 = token0, token1
 
-        spot_price_x96: int = self.stateview_get_slot0(
-            token0, token1, fee, tick_spacing, hooks
+        spot_price_x96: int = (
+            await self.stateview_get_slot0(token0, token1, fee, tick_spacing, hooks)
         )["sqrtPriceX96"]
 
         spot_price: float = (spot_price_x96 * spot_price_x96 * 10**den0 >> (96 * 2)) / (
@@ -1634,7 +1675,7 @@ class Uniswap4:
         return spot_price
 
     # Estimates slippage for the given amount of token0
-    def estimate_price_impact(
+    async def estimate_price_impact(
         self,
         token0: str,
         token1: str,
@@ -1660,7 +1701,7 @@ class Uniswap4:
         """
 
         try:
-            spot_price = self.get_token_token_spot_price(
+            spot_price = await self.get_token_token_spot_price(
                 token0, token1, fee, tick_spacing, hooks
             )
         except (ArithmeticError, BadFunctionCallOutput):
@@ -1674,7 +1715,7 @@ class Uniswap4:
             # Occurs when `token1` amount in the pool equals 0
             return 1
         try:
-            quote_amount = self.get_quote_exact_input_single(
+            quote_amount = await self.get_quote_exact_input_single(
                 token0, token1, qty, fee, tick_spacing, hooks, hook_data
             )
         except ContractLogicError:
@@ -1682,8 +1723,9 @@ class Uniswap4:
             # `(token0, token1, fee)` hasn't been deployed.
             return 1
         price = (
-            quote_amount / (qty / (10 ** self.get_token(_str_to_addr(token0)).decimals))
-        ) / 10 ** self.get_token(_str_to_addr(token1)).decimals
+            quote_amount
+            / (qty / (10 ** (await self.get_token(_str_to_addr(token0))).decimals))
+        ) / 10 ** (await self.get_token(_str_to_addr(token1))).decimals
 
         # calculate and subtract the realised fees from the price impact.  See:
         # https://github.com/uniswap-python/uniswap-python/issues/310
@@ -1694,7 +1736,7 @@ class Uniswap4:
 
     # Quoter methods
     # Read methods
-    def get_quote_exact_input_single(
+    async def get_quote_exact_input_single(
         self,
         token0: str,
         token1: str,
@@ -1721,12 +1763,14 @@ class Uniswap4:
             token0, token1 = token1, token0
         pool_key = (token0, token1, fee, tick_spacing, hooks)
         # [0]=The output quote [1]=estimated gas units used for the swap
-        quote_amount: int = self.quoter.functions.quoteExactInputSingle(
-            (pool_key, zero_for_one, qty, hook_data)
-        ).call()[0]
+        quote_amount: int = (
+            await self.quoter.functions.quoteExactInputSingle(
+                (pool_key, zero_for_one, qty, hook_data)
+            ).call()
+        )[0]
         return quote_amount
 
-    def get_quote_exact_input(
+    async def get_quote_exact_input(
         self,
         token_exact: str,
         qty: int,
@@ -1741,16 +1785,18 @@ class Uniswap4:
         encoded_route = self.encode_path_keys_input(route, token_exact)
 
         # [0]=The output quote [1]=estimated gas units used for the swap
-        quote_amount: int = self.quoter.functions.quoteExactInput(
-            (
-                token_exact,
-                [astuple(path_key) for path_key in encoded_route],
-                qty,
-            )
-        ).call()[0]
+        quote_amount: int = (
+            await self.quoter.functions.quoteExactInput(
+                (
+                    token_exact,
+                    [astuple(path_key) for path_key in encoded_route],
+                    qty,
+                )
+            ).call()
+        )[0]
         return quote_amount
 
-    def get_quote_exact_output_single(
+    async def get_quote_exact_output_single(
         self,
         token0: str,
         token1: str,
@@ -1784,12 +1830,14 @@ class Uniswap4:
             hooks,
         )
         # [0]=The input quote [1]=estimated gas units used for the swap
-        quote_amount: int = self.quoter.functions.quoteExactOutputSingle(
-            (pool_key, zero_for_one, qty, hook_data)
-        ).call()[0]
+        quote_amount: int = (
+            await self.quoter.functions.quoteExactOutputSingle(
+                (pool_key, zero_for_one, qty, hook_data)
+            ).call()
+        )[0]
         return quote_amount
 
-    def get_quote_exact_output(
+    async def get_quote_exact_output(
         self,
         token_exact: str,
         qty: int,
@@ -1803,17 +1851,19 @@ class Uniswap4:
         """
 
         encoded_route = self.encode_path_keys_output(route, token_exact)
-        quote_amount: int = self.quoter.functions.quoteExactOutput(
-            (
-                token_exact,
-                [astuple(path_key) for path_key in encoded_route],
-                qty,
-            )
-        ).call()[0]
+        quote_amount: int = (
+            await self.quoter.functions.quoteExactOutput(
+                (
+                    token_exact,
+                    [astuple(path_key) for path_key in encoded_route],
+                    qty,
+                )
+            ).call()
+        )[0]
         return quote_amount
 
     # Market price functions for selling `qty` amount of `token0` to buy `token1`
-    def get_price_input(
+    async def get_price_input(
         self,
         token0: str,
         token1: str,
@@ -1844,7 +1894,7 @@ class Uniswap4:
                 raise ValueError(
                     "fee and tick_spacing parameters must be provided for single hop quotes"
                 )
-            result = self.get_quote_exact_input_single(
+            result = await self.get_quote_exact_input_single(
                 token0,
                 token1,
                 qty,
@@ -1854,10 +1904,10 @@ class Uniswap4:
                 hook_data,  # type: ignore[arg-type]
             )
         else:
-            result = self.get_quote_exact_input(token0, qty, route)
+            result = await self.get_quote_exact_input(token0, qty, route)
         return result
 
-    def get_price_output(
+    async def get_price_output(
         self,
         token0: str,
         token1: str,
@@ -1887,7 +1937,7 @@ class Uniswap4:
                 raise ValueError(
                     "fee, tick_spacing, and hooks parameters must be provided for single hop quotes"
                 )
-            result = self.get_quote_exact_output_single(
+            result = await self.get_quote_exact_output_single(
                 token0,
                 token1,
                 qty,
@@ -1897,11 +1947,11 @@ class Uniswap4:
                 hook_data,  # type: ignore[arg-type]
             )
         else:
-            result = self.get_quote_exact_output(token1, qty, route)
+            result = await self.get_quote_exact_output(token1, qty, route)
         return result
 
     # Swap functions
-    def token_to_token_swap_exact_input(
+    async def token_to_token_swap_exact_input(
         self,
         input_token: str,
         qty: int,
@@ -1990,13 +2040,13 @@ class Uniswap4:
             )
         )
 
-        return self._build_and_send_tx(
+        return await self._build_and_send_tx(
             self.router.functions.execute(commands, inputs, self._deadline()),
-            self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
+            await self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
             custom_nonce=custom_nonce,
         )
 
-    def token_to_token_swap_input(
+    async def token_to_token_swap_input(
         self,
         input_token: str,
         qty: int,
@@ -2076,13 +2126,13 @@ class Uniswap4:
             )
         )
 
-        return self._build_and_send_tx(
+        return await self._build_and_send_tx(
             self.router.functions.execute(commands, inputs, self._deadline()),
-            self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
+            await self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
             custom_nonce=custom_nonce,
         )
 
-    def token_to_token_swap_exact_output(
+    async def token_to_token_swap_exact_output(
         self,
         input_token: str,
         qty: int,
@@ -2183,13 +2233,13 @@ class Uniswap4:
             )
         )
 
-        return self._build_and_send_tx(
+        return await self._build_and_send_tx(
             self.router.functions.execute(commands, inputs, self._deadline()),
-            self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
+            await self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
             custom_nonce=custom_nonce,
         )
 
-    def token_to_token_swap_output(
+    async def token_to_token_swap_output(
         self,
         output_token: str,
         qty: int,
@@ -2275,13 +2325,13 @@ class Uniswap4:
             )
         )
 
-        return self._build_and_send_tx(
+        return await self._build_and_send_tx(
             self.router.functions.execute(commands, inputs, self._deadline()),
-            self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
+            await self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
             custom_nonce=custom_nonce,
         )
 
-    def drop_txn(
+    async def drop_txn(
         self,
         address_to: AddressLike,
         gas_price: float,
@@ -2306,7 +2356,7 @@ class Uniswap4:
             "value": Web3.to_wei(0, "wei"),
             "gasPrice": Web3.to_wei(gas_price, "gwei"),
             "gas": int(self.gas_limit),
-            "chainId": int(self.w3.eth.chain_id),
+            "chainId": int(await self.w3.eth.chain_id),
         }
         signed_txn = self.w3.eth.account.sign_transaction(
             transaction_dict_legacy,
@@ -2324,19 +2374,21 @@ class Uniswap4:
             "maxFeePerGas": Web3.to_wei(int(gas_price), "gwei"),
             "maxPriorityFeePerGas": Web3.to_wei(priority_fee, "gwei"),
             "gas": int(self.gas_limit),
-            "chainId": int(self.w3.eth.chain_id),
+            "chainId": int(await self.w3.eth.chain_id),
         }
         signed_txn_london = self.w3.eth.account.sign_transaction(
             transaction_dict,
             self.private_key,
         )
         if self.post_merge:
-            return self.w3.eth.send_raw_transaction(signed_txn_london.rawTransaction)
+            return await self.w3.eth.send_raw_transaction(
+                signed_txn_london.rawTransaction
+            )
         else:
-            return self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+            return await self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
 
     # Market functions for swapping `qty` amount of `token0` to buy `token1`
-    def make_swap_input(
+    async def make_swap_input(
         self,
         input_token: str,
         output_token: str,
@@ -2363,7 +2415,7 @@ class Uniswap4:
         if route is None:
             if swap_pool_key is None:
                 raise ValueError("swap_pool_key must be provided for single hop swaps")
-            result = self.token_to_token_swap_exact_input(
+            result = await self.token_to_token_swap_exact_input(
                 input_token,
                 qty,
                 qtycap,
@@ -2376,7 +2428,7 @@ class Uniswap4:
                 custom_nonce=custom_nonce,
             )
         else:
-            result = self.token_to_token_swap_input(
+            result = await self.token_to_token_swap_input(
                 input_token,
                 qty,
                 qtycap,
@@ -2386,7 +2438,7 @@ class Uniswap4:
             )
         return result
 
-    def make_swap_output(
+    async def make_swap_output(
         self,
         input_token: str,
         output_token: str,
@@ -2413,7 +2465,7 @@ class Uniswap4:
         if route is None:
             if swap_pool_key is None:
                 raise ValueError("swap_pool_key must be provided for single hop swaps")
-            result = self.token_to_token_swap_exact_output(
+            result = await self.token_to_token_swap_exact_output(
                 input_token,
                 qty,
                 qtycap,
@@ -2426,7 +2478,7 @@ class Uniswap4:
                 custom_nonce=custom_nonce,
             )
         else:
-            result = self.token_to_token_swap_output(
+            result = await self.token_to_token_swap_output(
                 output_token,
                 qty,
                 qtycap,
@@ -2437,7 +2489,7 @@ class Uniswap4:
         return result
 
     # Liquidity management functions
-    def get_position_info(self, token_id: int) -> dict:
+    async def get_position_info(self, token_id: int) -> dict:
         """
                 Get information about a liquidity position given its token ID.
                 :return: A dictionary with the following keys:
@@ -2453,12 +2505,12 @@ class Uniswap4:
         - hasSubscriber: A boolean indicating whether the position has a subscriber
         - owner: The address of the owner of the position
         """
-        position_info = self.position_manager_get_pool_and_position_info(token_id)
+        position_info = await self.position_manager_get_pool_and_position_info(token_id)
 
         pool_key: PoolKey = position_info["poolKey"]
         pool_info = position_info["info"]
         pool_info_decoded = self.decode_position_info(pool_info)
-        owner_of = self.position_manager_get_owner_of(token_id)
+        owner_of = await self.position_manager_get_owner_of(token_id)
         return_value: dict = {
             "currency0": pool_key.currency0,
             "currency1": pool_key.currency1,
@@ -2473,15 +2525,15 @@ class Uniswap4:
         }
         return return_value
 
-    def get_position_value(
+    async def get_position_value(
         self, token_id: int, token0_decimals: int, token1_decimals: int
     ) -> dict:
         """
         Get the value of a liquidity position given its token ID.
         """
-        liquidity: int = self.position_manager_get_position_liquidity(token_id)
-        position_info = self.get_position_info(token_id)
-        slot0 = self.stateview_get_slot0(
+        liquidity: int = await self.position_manager_get_position_liquidity(token_id)
+        position_info = await self.get_position_info(token_id)
+        slot0 = await self.stateview_get_slot0(
             position_info["currency0"],
             position_info["currency1"],
             position_info["fee"],
@@ -2521,7 +2573,7 @@ class Uniswap4:
         }
         return return_value
 
-    def create_pool(
+    async def create_pool(
         self,
         pool_key: PoolKey,
         sqrt_price_x96: int,
@@ -2534,14 +2586,14 @@ class Uniswap4:
             astuple(pool_key),
             sqrt_price_x96,
         )
-        tx = self._build_and_send_tx(
+        tx = await self._build_and_send_tx(
             function,
-            self._get_tx_params(custom_nonce=custom_nonce),
+            await self._get_tx_params(custom_nonce=custom_nonce),
             custom_nonce=custom_nonce,
         )
         return tx
 
-    def mint_position(
+    async def mint_position(
         self,
         pool_key: PoolKey,
         tick_lower: int,
@@ -2631,16 +2683,16 @@ class Uniswap4:
             [actions, params],
         )
 
-        tx: HexBytes = self._build_and_send_tx(
+        tx: HexBytes = await self._build_and_send_tx(
             self.position_manager.functions.modifyLiquidities(
                 unlock_data, self._deadline()
             ),
-            self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
+            await self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
             custom_nonce=custom_nonce,
         )
         return tx
 
-    def increase_liquidity(
+    async def increase_liquidity(
         self,
         pool_key: PoolKey,
         token_id: int,
@@ -2716,16 +2768,16 @@ class Uniswap4:
             [actions, params],
         )
 
-        tx: HexBytes = self._build_and_send_tx(
+        tx: HexBytes = await self._build_and_send_tx(
             self.position_manager.functions.modifyLiquidities(
                 unlock_data, self._deadline()
             ),
-            self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
+            await self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
             custom_nonce=custom_nonce,
         )
         return tx
 
-    def decrease_liquidity(
+    async def decrease_liquidity(
         self,
         pool_key: PoolKey,
         token_id: int,
@@ -2782,16 +2834,16 @@ class Uniswap4:
             [actions, params],
         )
 
-        tx: HexBytes = self._build_and_send_tx(
+        tx: HexBytes = await self._build_and_send_tx(
             self.position_manager.functions.modifyLiquidities(
                 unlock_data, self._deadline()
             ),
-            self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
+            await self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
             custom_nonce=custom_nonce,
         )
         return tx
 
-    def collect_fees(
+    async def collect_fees(
         self,
         pool_key: PoolKey,
         token_id: int,
@@ -2842,16 +2894,16 @@ class Uniswap4:
             [actions, params],
         )
 
-        tx: HexBytes = self._build_and_send_tx(
+        tx: HexBytes = await self._build_and_send_tx(
             self.position_manager.functions.modifyLiquidities(
                 unlock_data, self._deadline()
             ),
-            self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
+            await self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
             custom_nonce=custom_nonce,
         )
         return tx
 
-    def burn_position(
+    async def burn_position(
         self,
         pool_key: PoolKey,
         token_id: int,
@@ -2905,16 +2957,16 @@ class Uniswap4:
             [actions, params],
         )
 
-        tx: HexBytes = self._build_and_send_tx(
+        tx: HexBytes = await self._build_and_send_tx(
             self.position_manager.functions.modifyLiquidities(
                 unlock_data, self._deadline()
             ),
-            self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
+            await self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
             custom_nonce=custom_nonce,
         )
         return tx
 
-    def universal_router_execute(
+    async def universal_router_execute(
         self,
         commands: list[int],
         actions: list[list[int]],
@@ -2995,11 +3047,11 @@ class Uniswap4:
                 )
                 encoded_inputs.append(encoded_params)
         # Execute contract call
-        result: HexBytes = self._build_and_send_tx(
+        result: HexBytes = await self._build_and_send_tx(
             self.router.functions.execute(
                 encoded_commands, encoded_inputs, self._deadline()
             ),
-            self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
+            await self._get_tx_params(value=ether_amount, custom_nonce=custom_nonce),
             custom_nonce=custom_nonce,
         )
 
@@ -3328,7 +3380,9 @@ class Uniswap4:
         pool_id = Web3.keccak(pool_data)
         return pool_id
 
-    def get_token(self, address: AddressLike, abi_name: str = "erc20") -> ERC20Token:
+    async def get_token(
+        self, address: AddressLike, abi_name: str = "erc20"
+    ) -> ERC20Token:
         """
         Retrieves metadata from the ERC20 contract of a given token, like its name, symbol, and decimals.
         """
@@ -3341,17 +3395,17 @@ class Uniswap4:
             )
         token_contract = _load_contract(self.w3, abi_name, address=address)
         try:
-            _name = token_contract.functions.name().call()
-            _symbol = token_contract.functions.symbol().call()
-            decimals = token_contract.functions.decimals().call()
+            _name = await token_contract.functions.name().call()
+            _symbol = await token_contract.functions.symbol().call()
+            decimals = await token_contract.functions.decimals().call()
         except ValueError:
             raise InvalidToken(address)
         try:
-            name = _name.decode()
+            name = await _name.decode()
         except ValueError:
             name = str(_name)
         try:
-            symbol = _symbol.decode()
+            symbol = await _symbol.decode()
         except ValueError as e:
             logger.warning(
                 "Error occurred while decoding symbol for %s: %s",
@@ -3361,31 +3415,33 @@ class Uniswap4:
             symbol = str(_symbol)
         return ERC20Token(symbol, address, name, decimals)
 
-    def get_token_balance(self, erc20: AddressLike) -> Decimal:
+    async def get_token_balance(self, erc20: AddressLike) -> Decimal:
         """Get the balance of an ERC20 token for your address."""
         contract = _load_contract(self.w3, abi_name="erc20", address=erc20)
-        decimals: int = contract.functions.decimals().call()
-        balance: int = contract.functions.balanceOf(self.address).call()
+        decimals: int = await contract.functions.decimals().call()
+        balance: int = await contract.functions.balanceOf(self.address).call()
         return_balance: Decimal = Decimal(balance) / Decimal(10**decimals)
         return return_balance
 
-    def get_balance(self) -> Decimal:
+    async def get_balance(self) -> Decimal:
         """Get the balance of ETH for your address."""
-        balance: int = self.w3.eth.get_balance(self.address)
+        balance: int = await self.w3.eth.get_balance(self.address)
         return_balance: Decimal = Decimal(balance) / Decimal(10**18)
         return return_balance
 
-    def load_contract_with_abi(self, abi_name: str, address: AddressLike) -> Contract:
+    def load_contract_with_abi(
+        self, abi_name: str, address: AddressLike
+    ) -> AsyncContract:
         return self.w3.eth.contract(address=address, abi=_load_abi(abi_name))
 
-    def erc20_contract(self, token_addr: AddressLike) -> Contract:
+    def erc20_contract(self, token_addr: AddressLike) -> AsyncContract:
         return self.load_contract_with_abi(abi_name="erc20", address=token_addr)
 
     def _deadline(self) -> int:
         """Get a predefined deadline. 10min by default."""
         return int(time.time()) + 10 * 60
 
-    def _get_tx_params(
+    async def _get_tx_params(
         self, value: int = 0, custom_nonce: Nonce | None = None
     ) -> TxParams:
         """Get generic transaction parameters."""
@@ -3408,29 +3464,38 @@ class Uniswap4:
                 "maxPriorityFeePerGas": Web3.to_wei(self.priority_fee, "gwei"),
                 "maxFeePerGas": Web3.to_wei(self.gas_price, "gwei"),
                 "type": 2,
-                "chainId": self.w3.eth.chain_id,
+                "chainId": await self.w3.eth.chain_id,
                 "value": Wei(value),
                 "nonce": Nonce(max(self.last_nonce, 0))
                 if custom_nonce is None
                 else custom_nonce,
             }
 
-    def _build_and_send_tx(
+    async def _build_and_send_tx(
         self,
-        function: ContractFunction,
+        function: AsyncContractFunction,
         tx_params: TxParams | None = None,
         custom_nonce: Nonce | None = None,
     ) -> HexBytes:
         """Build and send a transaction."""
         if not tx_params:
-            tx_params = self._get_tx_params(custom_nonce=custom_nonce)
-        transaction = function.build_transaction(tx_params)
-        signed_txn = self.w3.eth.account.sign_transaction(
+            tx_params = await self._get_tx_params(custom_nonce=custom_nonce)
+        transaction = await function.build_transaction(tx_params)
+        signed_txn = await self.w3.eth.account.sign_transaction(
             transaction, private_key=self.private_key
         )
         try:
-            return self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+            return await self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
         finally:
             # logger.debug(f"nonce: {tx_params['nonce']}")
             if custom_nonce is None:
                 self.last_nonce = Nonce(tx_params["nonce"] + 1)
+
+
+def _load_contract(w3: AsyncWeb3, abi_name: str, address: AddressLike) -> AsyncContract:
+    address = w3.to_checksum_address(address)
+    return w3.eth.contract(address=address, abi=_load_abi(abi_name))
+
+
+def _load_contract_erc20(w3: AsyncWeb3, address: AddressLike) -> AsyncContract:
+    return _load_contract(w3, "erc20", address)
