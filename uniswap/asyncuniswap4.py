@@ -99,10 +99,10 @@ class AsyncUniswap4:
 
         self.max_slippage = max_slippage
 
+        self.provider = provider or os.environ["PROVIDER"]
         if web3:
             self.w3 = web3
         else:
-            self.provider = provider or os.environ["PROVIDER"]
             self.w3 = AsyncWeb3(
                 AsyncWeb3.AsyncHTTPProvider(
                     self.provider, request_kwargs={"timeout": 60}

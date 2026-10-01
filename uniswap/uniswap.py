@@ -115,12 +115,12 @@ class Uniswap:
         self.default_slippage = default_slippage
         self.use_estimate_gas = use_estimate_gas
 
+        if not provider:
+            provider = os.environ["PROVIDER"]
         if web3:
             self.w3 = web3
         else:
             # Initialize web3. Extra provider for testing.
-            if not provider:
-                provider = os.environ["PROVIDER"]
             self.w3 = Web3(Web3.HTTPProvider(provider, request_kwargs={"timeout": 60}))
 
         self.netid = int(self.w3.net.version)
