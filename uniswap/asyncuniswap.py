@@ -14,7 +14,7 @@ from hexbytes import HexBytes
 from web3 import AsyncWeb3, Web3
 from web3._utils.abi import map_abi_data
 from web3._utils.normalizers import BASE_RETURN_NORMALIZERS
-from web3.contract import AsyncContract, Contract
+from web3.contract import AsyncContract
 from web3.contract.async_contract import AsyncContractFunction
 from web3.exceptions import BadFunctionCallOutput, ContractLogicError
 from web3.types import (
@@ -114,12 +114,12 @@ class AsyncUniswap:
         self.default_slippage = default_slippage
         self.use_estimate_gas = use_estimate_gas
 
+        if not provider:
+            provider = os.environ["PROVIDER"]
         if web3:
             self.w3 = web3
         else:
             # Initialize web3. Extra provider for testing.
-            if not provider:
-                provider = os.environ["PROVIDER"]
             self.w3 = AsyncWeb3(
                 AsyncWeb3.AsyncHTTPProvider(provider, request_kwargs={"timeout": 60})
             )
@@ -494,10 +494,10 @@ class AsyncUniswap:
                 input_token, qty, recipient, fee, slippage, fee_on_transfer
             )
         else:
-            if is_same_address(input_token, ETH_ADDRESS):
-                input_token = await self.get_weth_address()
-            if is_same_address(output_token, ETH_ADDRESS):
-                output_token = await self.get_weth_address()
+            # if is_same_address(input_token, ETH_ADDRESS):
+            #     input_token = await self.get_weth_address()
+            # if is_same_address(output_token, ETH_ADDRESS):
+            #     output_token = await self.get_weth_address()
             return await self._token_to_token_swap_input(
                 input_token,
                 output_token,
@@ -543,10 +543,10 @@ class AsyncUniswap:
                 input_token, Wei(qty), recipient, fee, slippage
             )
         else:
-            if is_same_address(input_token, ETH_ADDRESS):
-                input_token = await self.get_weth_address()
-            if is_same_address(output_token, ETH_ADDRESS):
-                output_token = await self.get_weth_address()
+            # if is_same_address(input_token, ETH_ADDRESS):
+            #     input_token = await self.get_weth_address()
+            # if is_same_address(output_token, ETH_ADDRESS):
+            #     output_token = await self.get_weth_address()
             return await self._token_to_token_swap_output(
                 input_token, output_token, qty, recipient, fee, slippage, route, fees
             )
@@ -773,14 +773,16 @@ class AsyncUniswap:
                 func = self.router.functions.swapExactTokensForTokensSupportingFeeOnTransferTokens
             else:
                 func = self.router.functions.swapExactTokensForTokens
-            weth_address = await self.get_weth_address()
-            if is_same_address(input_token, weth_address) or is_same_address(
-                output_token, weth_address
-            ):
-                path = [input_token, output_token]
+            if route is None:
+                weth_address = await self.get_weth_address()
+                if is_same_address(input_token, weth_address) or is_same_address(
+                    output_token, weth_address
+                ):
+                    path = [input_token, output_token]
+                else:
+                    path = [input_token, weth_address, output_token]
             else:
-                path = [input_token, weth_address, output_token]
-
+                path = route
             return await self._build_and_send_tx(
                 func(
                     qty,
@@ -1059,13 +1061,16 @@ class AsyncUniswap:
                 input_token, output_token, qty, fee=fee
             )
             amount_in_max = int((1 + slippage) * cost)
-            weth = await self.get_weth_address()
-            path = (
-                [input_token, output_token]
-                if is_same_address(input_token, weth)
-                or is_same_address(output_token, weth)
-                else [input_token, weth, output_token]
-            )
+            if route is None:
+                weth = await self.get_weth_address()
+                path = (
+                    [input_token, output_token]
+                    if is_same_address(input_token, weth)
+                    or is_same_address(output_token, weth)
+                    else [input_token, weth, output_token]
+                )
+            else:
+                path = route
             return await self._build_and_send_tx(
                 self.router.functions.swapTokensForExactTokens(
                     qty,
@@ -1174,7 +1179,7 @@ class AsyncUniswap:
 
     async def mint_liquidity(
         self,
-        pool: Contract,
+        pool: AsyncContract,
         amount_0: int,
         amount_1: int,
         tick_lower: int,
@@ -1185,8 +1190,8 @@ class AsyncUniswap:
         add liquidity to pool and mint position nft
         """
 
-        token_0 = pool.functions.token0().call()
-        token_1 = pool.functions.token1().call()
+        token_0 = await pool.functions.token0().call()
+        token_1 = await pool.functions.token1().call()
         token_0_instance = _load_contract(self.w3, abi_name="erc20", address=token_0)
         token_1_instance = _load_contract(self.w3, abi_name="erc20", address=token_1)
 
@@ -1196,16 +1201,16 @@ class AsyncUniswap:
         assert balance_0 > amount_0, f"Have {balance_0}, need {amount_0}: {token_0}"
         assert balance_1 > amount_1, f"Have {balance_1}, need {amount_1}: {token_1}"
 
-        fee = pool.functions.fee().call()
+        fee = await pool.functions.fee().call()
         tick_lower = nearest_tick(tick_lower, fee)
         tick_upper = nearest_tick(tick_upper, fee)
         assert tick_lower < tick_upper, "Invalid tick range"
 
-        *_, isInit = pool.functions.slot0().call()
+        *_, isInit = await pool.functions.slot0().call()
         # If pool is not initialized, init pool w/ sqrt_price_x96 encoded from amount_0 & amount_1
         if isInit is False:
             sqrt_pricex96 = encode_sqrt_ratioX96(amount_0, amount_1)
-            pool.functions.initialize(sqrt_pricex96).transact(
+            await pool.functions.initialize(sqrt_pricex96).transact(
                 {"from": _addr_to_str(self.address)}
             )
 
@@ -1428,7 +1433,9 @@ class AsyncUniswap:
                     )
                 )
                 _ticks.append(tick)
-            ticks.append(Batch(_ticks, self.multicall(_batch, pool_tick_output_types)))
+            ticks.append(
+                Batch(_ticks, await self.multicall(_batch, pool_tick_output_types))
+            )
 
         for tickBatch in ticks:
             tick_arr = tickBatch.ticks
@@ -1906,16 +1913,18 @@ class AsyncUniswap:
             )
 
         path = b""
+        _route = route.copy()
+        _fees = fees.copy()
         if is_exact_out:
             # For exact output swaps, the path is encoded in reverse order
-            route.reverse()
-            fees.reverse()
+            _route.reverse()
+            _fees.reverse()
 
-        for i in range(len(fees)):
-            path += self.w3.to_bytes(hexstr=HexStr(_addr_to_str(route[i]))) + fees[
+        for i in range(len(_fees)):
+            path += self.w3.to_bytes(hexstr=HexStr(_addr_to_str(_route[i]))) + _fees[
                 i
             ].to_bytes(3, "big")
-        path += self.w3.to_bytes(hexstr=HexStr(_addr_to_str(route[-1])))
+        path += self.w3.to_bytes(hexstr=HexStr(_addr_to_str(_route[-1])))
 
         return path
 

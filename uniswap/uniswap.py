@@ -36,7 +36,7 @@ from .constants import (
     _tick_bitmap_range,
     _tick_spacing,
 )
-from .decorators import check_approval, supports
+from .decorators import supports
 from .exceptions import InsufficientBalance, InvalidToken
 from .fee import validate_fee_tier
 from .token import ERC20Token
@@ -451,7 +451,6 @@ class Uniswap:
         return price
 
     # ------ Make Trade ----------------------------------------------------------------
-    @check_approval
     def make_trade(
         self,
         input_token: AddressLike,
@@ -485,10 +484,10 @@ class Uniswap:
                 input_token, qty, recipient, fee, slippage, fee_on_transfer
             )
         else:
-            if is_same_address(input_token, ETH_ADDRESS):
-                input_token = self.get_weth_address()
-            if is_same_address(output_token, ETH_ADDRESS):
-                output_token = self.get_weth_address()
+            # if is_same_address(input_token, ETH_ADDRESS):
+            #     input_token = self.get_weth_address()
+            # if is_same_address(output_token, ETH_ADDRESS):
+            #     output_token = self.get_weth_address()
             return self._token_to_token_swap_input(
                 input_token,
                 output_token,
@@ -501,7 +500,6 @@ class Uniswap:
                 fees,
             )
 
-    @check_approval
     def make_trade_output(
         self,
         input_token: AddressLike,
@@ -535,10 +533,10 @@ class Uniswap:
                 input_token, Wei(qty), recipient, fee, slippage
             )
         else:
-            if is_same_address(input_token, ETH_ADDRESS):
-                input_token = self.get_weth_address()
-            if is_same_address(output_token, ETH_ADDRESS):
-                output_token = self.get_weth_address()
+            # if is_same_address(input_token, ETH_ADDRESS):
+            #     input_token = self.get_weth_address()
+            # if is_same_address(output_token, ETH_ADDRESS):
+            #     output_token = self.get_weth_address()
             return self._token_to_token_swap_output(
                 input_token, output_token, qty, recipient, fee, slippage, route, fees
             )
@@ -763,14 +761,16 @@ class Uniswap:
                 func = self.router.functions.swapExactTokensForTokensSupportingFeeOnTransferTokens
             else:
                 func = self.router.functions.swapExactTokensForTokens
-            weth_address = self.get_weth_address()
-            if is_same_address(input_token, weth_address) or is_same_address(
-                output_token, weth_address
-            ):
-                path = [input_token, output_token]
+            if route is None:
+                weth_address = self.get_weth_address()
+                if is_same_address(input_token, weth_address) or is_same_address(
+                    output_token, weth_address
+                ):
+                    path = [input_token, output_token]
+                else:
+                    path = [input_token, weth_address, output_token]
             else:
-                path = [input_token, weth_address, output_token]
-
+                path = route
             return self._build_and_send_tx(
                 func(
                     qty,
@@ -1049,13 +1049,16 @@ class Uniswap:
                 input_token, output_token, qty, fee=fee
             )
             amount_in_max = int((1 + slippage) * cost)
-            weth = self.get_weth_address()
-            path = (
-                [input_token, output_token]
-                if is_same_address(input_token, weth)
-                or is_same_address(output_token, weth)
-                else [input_token, weth, output_token]
-            )
+            if route is None:
+                weth = self.get_weth_address()
+                path = (
+                    [input_token, output_token]
+                    if is_same_address(input_token, weth)
+                    or is_same_address(output_token, weth)
+                    else [input_token, weth, output_token]
+                )
+            else:
+                path = route
             return self._build_and_send_tx(
                 self.router.functions.swapTokensForExactTokens(
                     qty,
@@ -1144,7 +1147,6 @@ class Uniswap:
 
     # ------ Liquidity -----------------------------------------------------------------
     @supports([1])
-    @check_approval
     def add_liquidity(
         self, token: AddressLike, max_eth: Wei, min_liquidity: int = 1
     ) -> HexBytes:
@@ -1158,7 +1160,6 @@ class Uniswap:
         return self._build_and_send_tx(function, tx_params)
 
     @supports([1])
-    @check_approval
     def remove_liquidity(self, token: str, max_token: int) -> HexBytes:
         """Remove liquidity from the pool."""
         func_params = [int(max_token), 1, 1, self._deadline()]
@@ -1892,16 +1893,18 @@ class Uniswap:
             )
 
         path = b""
+        _route = route.copy()
+        _fees = fees.copy()
         if is_exact_out:
             # For exact output swaps, the path is encoded in reverse order
-            route.reverse()
-            fees.reverse()
+            _route.reverse()
+            _fees.reverse()
 
-        for i in range(len(fees)):
-            path += self.w3.to_bytes(hexstr=HexStr(_addr_to_str(route[i]))) + fees[
+        for i in range(len(_fees)):
+            path += self.w3.to_bytes(hexstr=HexStr(_addr_to_str(_route[i]))) + _fees[
                 i
             ].to_bytes(3, "big")
-        path += self.w3.to_bytes(hexstr=HexStr(_addr_to_str(route[-1])))
+        path += self.w3.to_bytes(hexstr=HexStr(_addr_to_str(_route[-1])))
 
         return path
 

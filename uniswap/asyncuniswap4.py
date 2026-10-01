@@ -2348,7 +2348,7 @@ class AsyncUniswap4:
         """
         # This one is for legacy transactions
         transaction_dict_legacy = {
-            "nonce": self.w3.eth.get_transaction_count(self.address)
+            "nonce": await self.w3.eth.get_transaction_count(self.address)
             if custom_nonce is None
             else custom_nonce,
             "from": _addr_to_str(self.address),
@@ -2358,14 +2358,14 @@ class AsyncUniswap4:
             "gas": int(self.gas_limit),
             "chainId": int(await self.w3.eth.chain_id),
         }
-        signed_txn = self.w3.eth.account.sign_transaction(
+        signed_txn = await self.w3.eth.account.sign_transaction(
             transaction_dict_legacy,
             self.private_key,
         )
         # This one is for post-Merge transactions
         transaction_dict = {
             "type": 2,
-            "nonce": self.w3.eth.get_transaction_count(self.address)
+            "nonce": await self.w3.eth.get_transaction_count(self.address)
             if custom_nonce is None
             else custom_nonce,
             "from": _addr_to_str(self.address),
@@ -2376,7 +2376,7 @@ class AsyncUniswap4:
             "gas": int(self.gas_limit),
             "chainId": int(await self.w3.eth.chain_id),
         }
-        signed_txn_london = self.w3.eth.account.sign_transaction(
+        signed_txn_london = await self.w3.eth.account.sign_transaction(
             transaction_dict,
             self.private_key,
         )
@@ -3234,14 +3234,14 @@ class AsyncUniswap4:
         )
         return liquidity
 
-    def get_minted_token_id(self, tx_hash: str) -> list[int]:
+    async def get_minted_token_id(self, tx_hash: str) -> list[int]:
         """
         Helper function to extract the token ID of a newly minted position from the transaction receipt of the minting transaction.
 
         :return: A list of token IDs of the newly minted positions; empty list if none can be extracted. In most cases, this list will contain only one token ID, but in some cases (e.g., if multiple positions are minted in a single transaction), it may contain multiple token IDs.
         """
-        transaction_receipt = self.w3.eth.get_transaction_receipt(tx_hash)  # type: ignore [arg-type]
-        logs = self.position_manager.events.Transfer().process_receipt(
+        transaction_receipt = await self.w3.eth.get_transaction_receipt(tx_hash)  # type: ignore [arg-type]
+        logs = await self.position_manager.events.Transfer().process_receipt(
             transaction_receipt
         )
         return_value: list[int] = []
