@@ -1045,7 +1045,6 @@ class Uniswap:
         elif self.version == 2:
             if recipient is None:
                 recipient = self.address
-            amount_in_max = int((1 + slippage) * cost)
             if route is None:
                 weth = self.get_weth_address()
                 path = (
@@ -1059,6 +1058,7 @@ class Uniswap:
             cost = self._get_token_token_output_price(
                 input_token, output_token, qty, fee=fee, route=path, fees=fees
             )
+            amount_in_max = int((1 + slippage) * cost)
             return self._build_and_send_tx(
                 self.router.functions.swapTokensForExactTokens(
                     qty,

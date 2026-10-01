@@ -763,12 +763,6 @@ class AsyncUniswap:
                 function = token_funcs.tokenToTokenTransferInput(*func_params)
             return await self._build_and_send_tx(function)
         elif self.version == 2:
-            min_tokens_bought = int(
-                (1 - slippage)
-                * await self._get_token_token_input_price(
-                    input_token, output_token, qty, fee=fee
-                )
-            )
             if fee_on_transfer:
                 func = self.router.functions.swapExactTokensForTokensSupportingFeeOnTransferTokens
             else:
@@ -783,6 +777,12 @@ class AsyncUniswap:
                     path = [input_token, weth_address, output_token]
             else:
                 path = route
+            min_tokens_bought = int(
+                (1 - slippage)
+                * await self._get_token_token_input_price(
+                    input_token, output_token, qty, fee=fee, route=path, fees=fees
+                )
+            )
             return await self._build_and_send_tx(
                 func(
                     qty,
@@ -1057,10 +1057,6 @@ class AsyncUniswap:
         elif self.version == 2:
             if recipient is None:
                 recipient = self.address
-            cost = await self._get_token_token_output_price(
-                input_token, output_token, qty, fee=fee
-            )
-            amount_in_max = int((1 + slippage) * cost)
             if route is None:
                 weth = await self.get_weth_address()
                 path = (
@@ -1071,6 +1067,10 @@ class AsyncUniswap:
                 )
             else:
                 path = route
+            cost = await self._get_token_token_output_price(
+                input_token, output_token, qty, fee=fee, route=path, fees=fees
+            )
+            amount_in_max = int((1 + slippage) * cost)
             return await self._build_and_send_tx(
                 self.router.functions.swapTokensForExactTokens(
                     qty,
