@@ -751,12 +751,6 @@ class Uniswap:
                 function = token_funcs.tokenToTokenTransferInput(*func_params)
             return self._build_and_send_tx(function)
         elif self.version == 2:
-            min_tokens_bought = int(
-                (1 - slippage)
-                * self._get_token_token_input_price(
-                    input_token, output_token, qty, fee=fee
-                )
-            )
             if fee_on_transfer:
                 func = self.router.functions.swapExactTokensForTokensSupportingFeeOnTransferTokens
             else:
@@ -771,6 +765,12 @@ class Uniswap:
                     path = [input_token, weth_address, output_token]
             else:
                 path = route
+            min_tokens_bought = int(
+                (1 - slippage)
+                * self._get_token_token_input_price(
+                    input_token, output_token, qty, fee=fee, route=path, fees=fees
+                )
+            )
             return self._build_and_send_tx(
                 func(
                     qty,
@@ -1045,9 +1045,6 @@ class Uniswap:
         elif self.version == 2:
             if recipient is None:
                 recipient = self.address
-            cost = self._get_token_token_output_price(
-                input_token, output_token, qty, fee=fee
-            )
             amount_in_max = int((1 + slippage) * cost)
             if route is None:
                 weth = self.get_weth_address()
@@ -1059,6 +1056,9 @@ class Uniswap:
                 )
             else:
                 path = route
+            cost = self._get_token_token_output_price(
+                input_token, output_token, qty, fee=fee, route=path, fees=fees
+            )
             return self._build_and_send_tx(
                 self.router.functions.swapTokensForExactTokens(
                     qty,
