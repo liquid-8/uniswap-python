@@ -474,11 +474,11 @@ class Uniswap:
         if input_token == output_token:
             raise ValueError
 
-        if input_token == ETH_ADDRESS and self.version == 2:
+        if input_token == ETH_ADDRESS:
             return self._eth_to_token_swap_input(
                 output_token, Wei(qty), recipient, fee, slippage, fee_on_transfer
             )
-        elif output_token == ETH_ADDRESS and self.version == 2:
+        elif output_token == ETH_ADDRESS:
             return self._token_to_eth_swap_input(
                 input_token, qty, recipient, fee, slippage, fee_on_transfer
             )
@@ -519,7 +519,7 @@ class Uniswap:
         if input_token == output_token:
             raise ValueError
 
-        if input_token == ETH_ADDRESS and self.version == 2:
+        if input_token == ETH_ADDRESS:
             balance = self.get_eth_balance()
             need = self._get_eth_token_output_price(output_token, qty, fee)
             if balance < need:
@@ -527,7 +527,7 @@ class Uniswap:
             return self._eth_to_token_swap_output(
                 output_token, qty, recipient, fee, slippage
             )
-        elif output_token == ETH_ADDRESS and self.version == 2:
+        elif output_token == ETH_ADDRESS:
             return self._token_to_eth_swap_output(
                 input_token, Wei(qty), recipient, fee, slippage
             )
@@ -1455,7 +1455,7 @@ class Uniswap:
         return (token0_liquidity, token1_liquidity)
 
     # ------ Approval Utils ------------------------------------------------------------
-    def approve(self, token: AddressLike, max_approval: int | None = None) -> None:
+    def approve(self, token: AddressLike, max_approval: int | None = None) -> TxReceipt:
         """Give an exchange/router max approval of a token."""
         max_approval = self.max_approval_int if not max_approval else max_approval
         contract_addr = (
@@ -1468,10 +1468,11 @@ class Uniswap:
         )
         logger.warning(f"Approving {_addr_to_str(token)}...")
         tx = self._build_and_send_tx(function)
-        self.w3.eth.wait_for_transaction_receipt(tx, timeout=6000)
+        receipt = self.w3.eth.wait_for_transaction_receipt(tx, timeout=6000)
 
         # Add extra sleep to let tx propagate correctly
         time.sleep(1)
+        return receipt
 
     def _is_approved(self, token: AddressLike) -> bool:
         """Check to see if the exchange and token is approved."""
@@ -1830,7 +1831,7 @@ class Uniswap:
         # tx_mint = pool.functions.mint(self.address, MIN_TICK, MAX_TICK, amount0,'').transact();
 
         position = positionManager.encode_abi(
-            fn_name="mint",
+            "mint",
             args=[
                 {
                     "token0": token0,

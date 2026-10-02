@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        uniswap-version: [1, 2, 3, 4]
+        uniswap-version: [2, 3, 4]
         network: ["mainnet"]
         # include:
         #   - network: arbitrum

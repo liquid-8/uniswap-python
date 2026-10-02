@@ -164,6 +164,22 @@ class TestUniswap:
 
     # ------ Market --------------------------------------------------------------------
     @pytest.mark.parametrize(
+        "token0",
+        [
+            ("ETH"),
+            ("UNI"),
+            ("DAI"),
+            ("USDC"),
+        ],
+    )
+    def test_approve(self, client: Uniswap, tokens, token0):
+        token0 = tokens[token0]
+        if client.version == 1 and ETH_ADDRESS == token0:
+            pytest.skip("Not supported in this version of Uniswap")
+        r = client.approve(token0)
+        assert r
+
+    @pytest.mark.parametrize(
         "token0, token1, qty",
         [
             ("ETH", "UNI", ONE_ETH),
