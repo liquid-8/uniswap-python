@@ -1026,7 +1026,7 @@ class TestUniswap4:
     ):
         result = client.get_position_info(TestUniswap4.test_token_id)
         test_pool_id_result: int = int.from_bytes(result["poolID"], byteorder="big")
-        truncated_pool_id_str = hex(test_pool_id_result).lower()
+        truncated_pool_id_str = f"{test_pool_id_result:x}".lower()
         pool_id_str = (
             client.get_pool_id(
                 PoolKey(
