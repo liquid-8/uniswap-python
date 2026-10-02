@@ -3402,11 +3402,11 @@ class AsyncUniswap4:
             raise InvalidToken(address)
         try:
             name = await _name.decode()
-        except ValueError:
+        except (ValueError, AttributeError):
             name = str(_name)
         try:
             symbol = await _symbol.decode()
-        except ValueError as e:
+        except (ValueError, AttributeError) as e:
             logger.warning(
                 "Error occurred while decoding symbol for %s: %s",
                 _addr_to_str(address),

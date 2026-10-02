@@ -2331,9 +2331,9 @@ class Uniswap4:
             self.private_key,
         )
         if self.post_merge:
-            return self.w3.eth.send_raw_transaction(signed_txn_london.rawTransaction)
+            return self.w3.eth.send_raw_transaction(signed_txn_london.raw_transaction)
         else:
-            return self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+            return self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
 
     # Market functions for swapping `qty` amount of `token0` to buy `token1`
     def make_swap_input(
@@ -3348,11 +3348,11 @@ class Uniswap4:
             raise InvalidToken(address)
         try:
             name = _name.decode()
-        except ValueError:
+        except (ValueError, AttributeError):
             name = str(_name)
         try:
             symbol = _symbol.decode()
-        except ValueError as e:
+        except (ValueError, AttributeError) as e:
             logger.warning(
                 "Error occurred while decoding symbol for %s: %s",
                 _addr_to_str(address),
@@ -3429,7 +3429,7 @@ class Uniswap4:
             transaction, private_key=self.private_key
         )
         try:
-            return self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+            return self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
         finally:
             # logger.debug(f"nonce: {tx_params['nonce']}")
             if custom_nonce is None:

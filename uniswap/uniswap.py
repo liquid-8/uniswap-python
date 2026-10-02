@@ -1523,7 +1523,7 @@ class Uniswap:
         # TODO: This needs to get more complicated if we want to support replacing a transaction
         # FIXME: This does not play nice if transactions are sent from other places using the same wallet.
         try:
-            return self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+            return self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
         finally:
             logger.debug(f"nonce: {tx_params['nonce']}")
             self.last_nonce = Nonce(tx_params["nonce"] + 1)
@@ -1670,20 +1670,22 @@ class Uniswap:
             raise InvalidToken(address)
         try:
             name = _name.decode()
-        except ValueError:
+        except (ValueError, AttributeError):
             name = _name
         try:
             symbol = _symbol.decode()
-        except ValueError:
+        except (ValueError, AttributeError):
             symbol = _symbol
         return ERC20Token(symbol, address, name, decimals)
 
-    @supports([2, 3])
+    @supports([1, 2, 3])
     def get_weth_address(self) -> ChecksumAddress:
         """Retrieves the WETH address from the contracts (which may vary between chains)."""
+        if self.version == 1:
+            address: ChecksumAddress = self.w3.to_checksum_address(WETH9_ADDRESS)
         if self.version == 2:
             # Contract calls should always return checksummed addresses
-            address: ChecksumAddress = self.router.functions.WETH().call()
+            address = self.router.functions.WETH().call()
         elif self.version == 3:
             address = self.router.functions.WETH9().call()
         else:
