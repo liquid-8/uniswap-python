@@ -692,7 +692,7 @@ class AsyncUniswap:
             sqrtPriceLimitX96 = 0
 
             swap_data = self.router.encode_abi(
-                fn_name="exactInputSingle",
+                "exactInputSingle",
                 args=[
                     (
                         input_token,
@@ -708,7 +708,7 @@ class AsyncUniswap:
             )
 
             unwrap_data = self.router.encode_abi(
-                fn_name="unwrapWETH9", args=[min_tokens_bought, recipient]
+                "unwrapWETH9", args=[min_tokens_bought, recipient]
             )
 
             # Multicall
@@ -891,7 +891,7 @@ class AsyncUniswap:
             sqrtPriceLimitX96 = 0
 
             swap_data = self.router.encode_abi(
-                fn_name="exactOutputSingle",
+                "exactOutputSingle",
                 args=[
                     (
                         await self.get_weth_address(),
@@ -906,7 +906,7 @@ class AsyncUniswap:
                 ],
             )
 
-            refund_data = self.router.encode_abi(fn_name="refundETH", args=None)
+            refund_data = self.router.encode_abi("refundETH", args=None)
 
             # Multicall
             return await self._build_and_send_tx(
@@ -979,7 +979,7 @@ class AsyncUniswap:
             sqrtPriceLimitX96 = 0
 
             swap_data = self.router.encode_abi(
-                fn_name="exactOutputSingle",
+                "exactOutputSingle",
                 args=[
                     (
                         input_token,
@@ -994,9 +994,7 @@ class AsyncUniswap:
                 ],
             )
 
-            unwrap_data = self.router.encode_abi(
-                fn_name="unwrapWETH9", args=[qty, recipient]
-            )
+            unwrap_data = self.router.encode_abi("unwrapWETH9", args=[qty, recipient])
 
             # Multicall
             return await self._build_and_send_tx(
@@ -1852,7 +1850,7 @@ class AsyncUniswap:
         # tx_mint = pool.functions.mint(self.address, MIN_TICK, MAX_TICK, amount0,'').transact();
 
         position = positionManager.encode_abi(
-            fn_name="mint",
+            "mint",
             args=[
                 {
                     "token0": token0,

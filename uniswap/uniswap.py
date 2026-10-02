@@ -679,7 +679,7 @@ class Uniswap:
             sqrtPriceLimitX96 = 0
 
             swap_data = self.router.encode_abi(
-                fn_name="exactInputSingle",
+                "exactInputSingle",
                 args=[
                     (
                         input_token,
@@ -695,7 +695,7 @@ class Uniswap:
             )
 
             unwrap_data = self.router.encode_abi(
-                fn_name="unwrapWETH9", args=[min_tokens_bought, recipient]
+                "unwrapWETH9", args=[min_tokens_bought, recipient]
             )
 
             # Multicall
@@ -878,7 +878,7 @@ class Uniswap:
             sqrtPriceLimitX96 = 0
 
             swap_data = self.router.encode_abi(
-                fn_name="exactOutputSingle",
+                "exactOutputSingle",
                 args=[
                     (
                         self.get_weth_address(),
@@ -893,7 +893,7 @@ class Uniswap:
                 ],
             )
 
-            refund_data = self.router.encode_abi(fn_name="refundETH", args=None)
+            refund_data = self.router.encode_abi("refundETH", args=None)
 
             # Multicall
             return self._build_and_send_tx(
@@ -966,7 +966,7 @@ class Uniswap:
             sqrtPriceLimitX96 = 0
 
             swap_data = self.router.encode_abi(
-                fn_name="exactOutputSingle",
+                "exactOutputSingle",
                 args=[
                     (
                         input_token,
@@ -981,9 +981,7 @@ class Uniswap:
                 ],
             )
 
-            unwrap_data = self.router.encode_abi(
-                fn_name="unwrapWETH9", args=[qty, recipient]
-            )
+            unwrap_data = self.router.encode_abi("unwrapWETH9", args=[qty, recipient])
 
             # Multicall
             return self._build_and_send_tx(
