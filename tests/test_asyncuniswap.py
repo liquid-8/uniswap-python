@@ -4,6 +4,7 @@ import os
 import shutil
 from contextlib import contextmanager
 from dataclasses import dataclass
+from typing import Any
 
 import pytest
 from web3 import AsyncWeb3
@@ -107,7 +108,7 @@ async def web3(anvil: AnvilInstance):
 
 
 @pytest.fixture(scope="module")
-async def anvil():
+async def anvil() -> Any:
     """Fixture that runs anvil which has forked off mainnet"""
     if not shutil.which("anvil"):
         raise ValueError(
