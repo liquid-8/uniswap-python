@@ -2358,7 +2358,7 @@ class AsyncUniswap4:
             "gas": int(self.gas_limit),
             "chainId": int(await self.w3.eth.chain_id),
         }
-        signed_txn = await self.w3.eth.account.sign_transaction(
+        signed_txn = self.w3.eth.account.sign_transaction(
             transaction_dict_legacy,
             self.private_key,
         )
@@ -2376,16 +2376,16 @@ class AsyncUniswap4:
             "gas": int(self.gas_limit),
             "chainId": int(await self.w3.eth.chain_id),
         }
-        signed_txn_london = await self.w3.eth.account.sign_transaction(
+        signed_txn_london = self.w3.eth.account.sign_transaction(
             transaction_dict,
             self.private_key,
         )
         if self.post_merge:
             return await self.w3.eth.send_raw_transaction(
-                signed_txn_london.rawTransaction
+                signed_txn_london.raw_transaction
             )
         else:
-            return await self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+            return await self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
 
     # Market functions for swapping `qty` amount of `token0` to buy `token1`
     async def make_swap_input(
@@ -3481,11 +3481,11 @@ class AsyncUniswap4:
         if not tx_params:
             tx_params = await self._get_tx_params(custom_nonce=custom_nonce)
         transaction = await function.build_transaction(tx_params)
-        signed_txn = await self.w3.eth.account.sign_transaction(
+        signed_txn = self.w3.eth.account.sign_transaction(
             transaction, private_key=self.private_key
         )
         try:
-            return await self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+            return await self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
         finally:
             # logger.debug(f"nonce: {tx_params['nonce']}")
             if custom_nonce is None:

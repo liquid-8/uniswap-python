@@ -1537,7 +1537,7 @@ class AsyncUniswap:
                 int(await self.w3.eth.estimate_gas(transaction) * 1.2)
             )
 
-        signed_txn = await self.w3.eth.account.sign_transaction(
+        signed_txn = self.w3.eth.account.sign_transaction(
             transaction, private_key=self.private_key
         )
         # TODO: This needs to get more complicated if we want to support replacing a transaction
