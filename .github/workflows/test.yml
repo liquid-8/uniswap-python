@@ -70,9 +70,6 @@ jobs:
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
 
-    - name: Install Foundry
-      uses: foundry-rs/foundry-toolchain@v1
-
     - name: Test
       env:
         # Use the secret if available, otherwise fallback to the public key

@@ -459,7 +459,7 @@ class TestUniswap:
             # Token -> Token
             ("DAI", "USDC", ONE_ETH, None, does_not_raise),
             # Token -> ETH
-            ("USDC", "ETH", ONE_USDC, None, does_not_raise),
+            ("USDC", "ETH", ONE_USDC // 2, None, does_not_raise),
             # ("ETH", "UNI", 0.00001 * ONE_ETH, ZERO_ADDRESS, does_not_raise),
             # ("UNI", "ETH", 0.00001 * ONE_ETH, ZERO_ADDRESS, does_not_raise),
             # ("DAI", "UNI", 0.00001 * ONE_ETH, ZERO_ADDRESS, does_not_raise),
