@@ -1468,9 +1468,7 @@ class AsyncUniswap:
         return (token0_liquidity, token1_liquidity)
 
     # ------ Approval Utils ------------------------------------------------------------
-    async def approve(
-        self, token: AddressLike, max_approval: int | None = None
-    ) -> None:
+    async def approve(self, token: AddressLike, max_approval: int | None = None) -> int:
         """Give an exchange/router max approval of a token."""
         max_approval = self.max_approval_int if not max_approval else max_approval
         contract_addr = (
@@ -1487,6 +1485,7 @@ class AsyncUniswap:
 
         # Add extra sleep to let tx propagate correctly
         await asyncio.sleep(1)
+        return 1
 
     async def _is_approved(self, token: AddressLike) -> bool:
         """Check to see if the exchange and token is approved."""
