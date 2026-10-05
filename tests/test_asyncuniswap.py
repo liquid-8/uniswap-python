@@ -1,12 +1,14 @@
-import asyncio
 import logging
 import os
 import shutil
+import subprocess
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any
+from time import sleep
 
 import pytest
+import pytest_asyncio
 from web3 import AsyncWeb3
 from web3.types import Wei
 
@@ -53,7 +55,7 @@ class AnvilInstance:
 
 
 @pytest.fixture(scope="module", params=UNISWAP_VERSIONS)
-async def client(request, web3: AsyncWeb3, anvil: AnvilInstance):
+def client(request, web3: AsyncWeb3, anvil: AnvilInstance):
     return AsyncUniswap(
         anvil.eth_address,
         anvil.eth_privkey,
@@ -64,7 +66,7 @@ async def client(request, web3: AsyncWeb3, anvil: AnvilInstance):
 
 
 @pytest.fixture(scope="function")
-async def tokens(client: AsyncUniswap):
+def tokens(client: AsyncUniswap):
     return get_tokens(client.netname)
 
 
@@ -96,8 +98,7 @@ async def test_assets(client: AsyncUniswap):
         assert tx["status"] == 1, f"Transaction failed: {tx}"
 
 
-@pytest.fixture(scope="module")
-@pytest.mark.asyncio
+@pytest_asyncio.fixture(scope="module")
 async def web3(anvil: AnvilInstance):
     w3: AsyncWeb3 = AsyncWeb3(
         AsyncWeb3.AsyncHTTPProvider(anvil.provider, request_kwargs={"timeout": 30})
@@ -108,7 +109,7 @@ async def web3(anvil: AnvilInstance):
 
 
 @pytest.fixture(scope="module")
-async def anvil() -> Any:
+def anvil() -> Generator[AnvilInstance, None, None]:
     """Fixture that runs anvil which has forked off mainnet"""
     if not shutil.which("anvil"):
         raise ValueError(
@@ -121,25 +122,23 @@ async def anvil() -> Any:
 
     port = 11999
     defaultGasPrice = 100_000_000_000  # 100 gwei
-    p = await asyncio.create_subprocess_shell(
+    p = subprocess.Popen(
         f"""anvil
         --port {port}
         --chain-id 1
         --fork-url {os.environ["PROVIDER"]}
         --gas-price {defaultGasPrice}
         """.replace("\n", " "),
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
+        shell=True,
     )
     # Account #9 from anvil's default test mnemonic, starts with 1000 ETH
     eth_address = "0xa0Ee7A142d267C1f36714E4a8F75612F20a79720"
     eth_privkey = "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
 
-    await asyncio.sleep(3)
+    sleep(3)
     yield AnvilInstance(f"http://127.0.0.1:{port}", eth_address, eth_privkey)
     p.kill()
-    await p.wait()
+    p.wait()
 
 
 @contextmanager
@@ -153,7 +152,6 @@ ONE_USDC = 10**6
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 
-# TODO: Change pytest.param(..., mark=pytest.mark.xfail) to the expectation/raises method
 @pytest.mark.usefixtures("client", "web3")
 class TestAsyncUniswap:
     # ------ Exchange ------------------------------------------------------------------

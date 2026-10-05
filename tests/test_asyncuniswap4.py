@@ -1,12 +1,14 @@
-import asyncio
 import logging
 import os
 import shutil
+import subprocess
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import astuple, dataclass
-from typing import Any
+from time import sleep
 
 import pytest
+import pytest_asyncio
 from web3 import AsyncWeb3
 from web3.types import Nonce
 
@@ -71,7 +73,7 @@ class AnvilInstance:
 
 
 @pytest.fixture(scope="module")
-async def client(web3: AsyncWeb3, anvil: AnvilInstance) -> AsyncUniswap4:
+def client(web3: AsyncWeb3, anvil: AnvilInstance) -> AsyncUniswap4:
     return AsyncUniswap4(
         anvil.eth_address,
         anvil.eth_privkey,
@@ -81,11 +83,11 @@ async def client(web3: AsyncWeb3, anvil: AnvilInstance) -> AsyncUniswap4:
 
 
 @pytest.fixture(scope="module")
-async def pool_service(web3: AsyncWeb3) -> AsyncV4pools:
+def pool_service(web3: AsyncWeb3) -> AsyncV4pools:
     return AsyncV4pools(web3)
 
 
-@pytest.fixture(scope="module")
+@pytest_asyncio.fixture(scope="module")
 async def web3(anvil: AnvilInstance) -> AsyncWeb3:
     w3 = AsyncWeb3(
         AsyncWeb3.AsyncHTTPProvider(anvil.provider, request_kwargs={"timeout": 30})
@@ -96,7 +98,7 @@ async def web3(anvil: AnvilInstance) -> AsyncWeb3:
 
 
 @pytest.fixture(scope="module")
-async def anvil() -> Any:
+def anvil() -> Generator[AnvilInstance, None, None]:
     """Fixture that runs anvil which has forked off mainnet"""
     if not shutil.which("anvil"):
         raise ValueError("anvil was not found in PATH")
@@ -107,24 +109,22 @@ async def anvil() -> Any:
 
     port = 11998
     defaultGasPrice = 100_000_000_000  # 100 gwei
-    p = await asyncio.create_subprocess_shell(
+    p = subprocess.Popen(
         f"""anvil
         --port {port}
         --chain-id 1
         --fork-url {os.environ["PROVIDER"]}
         --gas-price {defaultGasPrice}
         """.replace("\n", " "),
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
+        shell=True,
     )
     # Address #1 when anvil is run with `--wallet.seed test`, it starts with 1000 ETH
     eth_address = "0xa0Ee7A142d267C1f36714E4a8F75612F20a79720"
     eth_privkey = "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
-    await asyncio.sleep(3)
+    sleep(3)
     yield AnvilInstance(f"http://127.0.0.1:{port}", eth_address, eth_privkey)
     p.kill()
-    await p.wait()
+    p.wait()
 
 
 @contextmanager

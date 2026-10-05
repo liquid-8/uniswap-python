@@ -1682,7 +1682,7 @@ class Uniswap:
         """Retrieves the WETH address from the contracts (which may vary between chains)."""
         if self.version == 1:
             address: ChecksumAddress = self.w3.to_checksum_address(WETH9_ADDRESS)
-        if self.version == 2:
+        elif self.version == 2:
             # Contract calls should always return checksummed addresses
             address = self.router.functions.WETH().call()
         elif self.version == 3:

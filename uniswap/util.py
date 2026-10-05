@@ -1,3 +1,4 @@
+import asyncio
 import json
 import math
 import os
@@ -573,7 +574,7 @@ class AsyncV4pools:
                     print(
                         f"Waiting for {minutes_between_retries} minutes before next attempt..."
                     )
-                    sleep(int(minutes_between_retries) * 60)
+                    await asyncio.sleep(int(minutes_between_retries) * 60)
                     retry_attempts_done += 1
                     try:
                         logs = await pool_manager_contract.events.Initialize().get_logs(

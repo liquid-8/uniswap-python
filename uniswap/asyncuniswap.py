@@ -1468,7 +1468,9 @@ class AsyncUniswap:
         return (token0_liquidity, token1_liquidity)
 
     # ------ Approval Utils ------------------------------------------------------------
-    async def approve(self, token: AddressLike, max_approval: int | None = None) -> int:
+    async def approve(
+        self, token: AddressLike, max_approval: int | None = None
+    ) -> TxReceipt:
         """Give an exchange/router max approval of a token."""
         max_approval = self.max_approval_int if not max_approval else max_approval
         contract_addr = (
@@ -1481,11 +1483,11 @@ class AsyncUniswap:
         )
         logger.warning(f"Approving {_addr_to_str(token)}...")
         tx = await self._build_and_send_tx(function)
-        await self.w3.eth.wait_for_transaction_receipt(tx, timeout=6000)
+        receipt = await self.w3.eth.wait_for_transaction_receipt(tx, timeout=6000)
 
         # Add extra sleep to let tx propagate correctly
         await asyncio.sleep(1)
-        return 1
+        return receipt
 
     async def _is_approved(self, token: AddressLike) -> bool:
         """Check to see if the exchange and token is approved."""
@@ -1704,7 +1706,7 @@ class AsyncUniswap:
         """Retrieves the WETH address from the contracts (which may vary between chains)."""
         if self.version == 1:
             address: ChecksumAddress = self.w3.to_checksum_address(WETH9_ADDRESS)
-        if self.version == 2:
+        elif self.version == 2:
             # Contract calls should always return checksummed addresses
             address = await self.router.functions.WETH().call()
         elif self.version == 3:
