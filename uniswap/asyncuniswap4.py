@@ -3241,7 +3241,7 @@ class AsyncUniswap4:
         :return: A list of token IDs of the newly minted positions; empty list if none can be extracted. In most cases, this list will contain only one token ID, but in some cases (e.g., if multiple positions are minted in a single transaction), it may contain multiple token IDs.
         """
         transaction_receipt = await self.w3.eth.get_transaction_receipt(tx_hash)  # type: ignore [arg-type]
-        logs = await self.position_manager.events.Transfer().process_receipt(
+        logs = self.position_manager.events.Transfer().process_receipt(
             transaction_receipt
         )
         return_value: list[int] = []
