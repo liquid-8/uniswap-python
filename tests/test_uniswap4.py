@@ -1170,6 +1170,12 @@ class TestUniswap4:
         )
 
     # ------ V4Pools tests ----------------------------------------------------------------
+    @pytest.mark.parametrize(
+        "first_block",
+        [
+            (21688329),
+        ],
+    )
     def test_fetch_poolkey_data(
         self,
         pool_service: V4pools,

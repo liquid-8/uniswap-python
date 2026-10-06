@@ -1205,6 +1205,12 @@ class TestAsyncUniswap4:
     #     reason="Test node issues with fetching poolkey data, skipping for now"
     # )
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "first_block",
+        [
+            (21688329),
+        ],
+    )
     async def test_fetch_poolkey_data(
         self,
         pool_service: AsyncV4pools,
