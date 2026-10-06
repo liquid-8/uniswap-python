@@ -1170,17 +1170,16 @@ class TestUniswap4:
         )
 
     # ------ V4Pools tests ----------------------------------------------------------------
-    @pytest.mark.skip(
-        reason="Test node issues with fetching poolkey data, skipping for now"
-    )
     def test_fetch_poolkey_data(
         self,
         pool_service: V4pools,
         first_block: int,
     ):
         result: int = pool_service.fetch_poolkey_data(
-            first_block, chunk_size=500, clear_list=False, last_block=first_block + 1001
+            first_block, chunk_size=50, clear_list=False, last_block=first_block + 101
         )
+        if result != 0:
+            print(f"Failed to fetch poolkey data, connection issues, result:  {result}")
         assert result == 0
 
     @pytest.mark.parametrize(

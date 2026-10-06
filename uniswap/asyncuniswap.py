@@ -485,11 +485,11 @@ class AsyncUniswap:
         if input_token == output_token:
             raise ValueError
 
-        if input_token == ETH_ADDRESS:
+        if input_token == ETH_ADDRESS and (route is None or fees is None):
             return await self._eth_to_token_swap_input(
                 output_token, Wei(qty), recipient, fee, slippage, fee_on_transfer
             )
-        elif output_token == ETH_ADDRESS:
+        elif output_token == ETH_ADDRESS and (route is None or fees is None):
             return await self._token_to_eth_swap_input(
                 input_token, qty, recipient, fee, slippage, fee_on_transfer
             )
@@ -530,7 +530,7 @@ class AsyncUniswap:
         if input_token == output_token:
             raise ValueError
 
-        if input_token == ETH_ADDRESS:
+        if input_token == ETH_ADDRESS and (route is None or fees is None):
             balance = await self.get_eth_balance()
             need = await self._get_eth_token_output_price(output_token, qty, fee)
             if balance < need:
@@ -538,7 +538,7 @@ class AsyncUniswap:
             return await self._eth_to_token_swap_output(
                 output_token, qty, recipient, fee, slippage
             )
-        elif output_token == ETH_ADDRESS:
+        elif output_token == ETH_ADDRESS and (route is None or fees is None):
             return await self._token_to_eth_swap_output(
                 input_token, Wei(qty), recipient, fee, slippage
             )

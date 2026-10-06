@@ -558,7 +558,7 @@ class AsyncV4pools:
                 flush=True,
             )
             try:
-                logs = await pool_manager_contract.events.Initialize().get_logs(
+                logs = pool_manager_contract.events.Initialize().get_logs(
                     from_block=start_block, to_block=end_block
                 )
             except Exception as e:
@@ -577,7 +577,7 @@ class AsyncV4pools:
                     await asyncio.sleep(int(minutes_between_retries) * 60)
                     retry_attempts_done += 1
                     try:
-                        logs = await pool_manager_contract.events.Initialize().get_logs(
+                        logs = pool_manager_contract.events.Initialize().get_logs(
                             from_block=start_block, to_block=end_block
                         )
                         print("Issue addressed. Resuming log retrieval.")
