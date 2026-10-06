@@ -1182,10 +1182,17 @@ class TestUniswap4:
         first_block: int,
     ):
         result: int = pool_service.fetch_poolkey_data(
-            first_block, chunk_size=50, clear_list=False, last_block=first_block + 101
+            first_block,
+            chunk_size=50,
+            clear_list=False,
+            retry_attempts=1,
+            minutes_between_retries=1,
+            last_block=first_block + 101,
         )
         if result != 0:
-            print(f"Failed to fetch poolkey data, connection issues, result:  {result}")
+            pytest.skip(
+                f"Failed to fetch poolkey data, connection issues, result:  {result}"
+            )
         assert result == 0
 
     @pytest.mark.parametrize(

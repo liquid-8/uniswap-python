@@ -1217,7 +1217,12 @@ class TestAsyncUniswap4:
         first_block: int,
     ):
         result: int = await pool_service.fetch_poolkey_data(
-            first_block, chunk_size=50, clear_list=False, last_block=first_block + 101
+            first_block,
+            chunk_size=50,
+            clear_list=False,
+            retry_attempts=1,
+            minutes_between_retries=1,
+            last_block=first_block + 101,
         )
         if result != 0:
             pytest.skip(
