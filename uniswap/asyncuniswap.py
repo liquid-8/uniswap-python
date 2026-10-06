@@ -485,6 +485,9 @@ class AsyncUniswap:
         if input_token == output_token:
             raise ValueError
 
+        if self.version != 3 and fees:
+            fees = None
+
         if input_token == ETH_ADDRESS and (route is None or fees is None):
             return await self._eth_to_token_swap_input(
                 output_token, Wei(qty), recipient, fee, slippage, fee_on_transfer
@@ -529,6 +532,9 @@ class AsyncUniswap:
 
         if input_token == output_token:
             raise ValueError
+
+        if self.version != 3 and fees:
+            fees = None
 
         if input_token == ETH_ADDRESS and (route is None or fees is None):
             balance = await self.get_eth_balance()
