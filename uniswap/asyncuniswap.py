@@ -740,7 +740,9 @@ class AsyncUniswap:
         if recipient is None:
             recipient = self.address
 
-        if input_token == ETH_ADDRESS or output_token == ETH_ADDRESS:
+        if (input_token == ETH_ADDRESS or output_token == ETH_ADDRESS) and (
+            route is None or fees is None
+        ):
             raise ValueError
 
         if self.version == 1:
@@ -1019,7 +1021,9 @@ class AsyncUniswap:
 
         :param fee: TODO
         """
-        if input_token == ETH_ADDRESS or output_token == ETH_ADDRESS:
+        if (input_token == ETH_ADDRESS or output_token == ETH_ADDRESS) and (
+            route is None or fees is None
+        ):
             raise ValueError
 
         # Balance check
